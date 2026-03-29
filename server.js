@@ -4,11 +4,17 @@ const Database = require("better-sqlite3");
 const axios    = require("axios");
 const bcrypt   = require("bcryptjs");
 const jwt      = require("jsonwebtoken");
+const multer   = require("multer");
+const XLSX     = require("xlsx");
+const path     = require("path");
 
 const app = express();
 const db  = new Database("portflow.db");
 
 const JWT_SECRET = process.env.JWT_SECRET || "portflow_secret_change_in_prod";
+
+// multer — memory storage (no disk writes needed)
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 app.use(cors());
 app.use(express.json());
@@ -80,7 +86,7 @@ function auth(req, res, next) {
   }
 }
 
-// Helper: get or seed default SIP config for a user
+// Helper: get or seed default SIP config per user
 function getOrSeedSIP(userId) {
   let cfg = db.prepare("SELECT * FROM sip_config WHERE user_id=? ORDER BY id DESC LIMIT 1").get(userId);
   if (!cfg) {
@@ -103,9 +109,6 @@ function getOrSeedSIP(userId) {
 
 // ─────────────────────────────────────────
 // XIRR ENGINE
-// BUY  → negative cashflow (money out)
-// SELL → positive cashflow (money in)
-// Current market value → positive cashflow today
 // ─────────────────────────────────────────
 function xirr(cashflows) {
   if (!cashflows || cashflows.length < 2) return null;
@@ -114,37 +117,198 @@ function xirr(cashflows) {
   const days    = sorted.map(c => (c.date - t0) / 86400000);
   const amounts = sorted.map(c => c.amount);
 
+  // Guard: all cashflows same sign → no solution
+  if (!amounts.some(a => a < 0) || !amounts.some(a => a > 0)) return null;
+
   const npv  = r => amounts.reduce((s, cf, i) => s + cf / Math.pow(1 + r, days[i] / 365), 0);
   const dnpv = r => amounts.reduce((s, cf, i) => s - (days[i] / 365) * cf / Math.pow(1 + r, days[i] / 365 + 1), 0);
 
+  // Newton-Raphson
   let r = 0.1;
-  for (let i = 0; i < 200; i++) {
+  for (let i = 0; i < 300; i++) {
     const f = npv(r), df = dnpv(r);
     if (Math.abs(df) < 1e-14) break;
     const rn = r - f / df;
-    if (Math.abs(rn - r) < 1e-9) return +((rn * 100).toFixed(2));
-    r = rn < -0.9999 ? -0.9999 : rn;
+    if (Math.abs(rn - r) < 1e-10) return +((rn * 100).toFixed(2));
+    r = rn < -0.9999 ? -0.9999 : rn > 100 ? 100 : rn;
   }
+
+  // Bisection fallback
   let lo = -0.9999, hi = 10;
-  if (npv(lo) * npv(hi) > 0) return null;
-  for (let i = 0; i < 300; i++) {
+  const nlo = npv(lo), nhi = npv(hi);
+  if (nlo * nhi > 0) return null;
+  for (let i = 0; i < 500; i++) {
     const mid = (lo + hi) / 2;
+    if (Math.abs(hi - lo) < 1e-10) return +((mid * 100).toFixed(2));
     npv(mid) * npv(lo) < 0 ? (hi = mid) : (lo = mid);
-    if (hi - lo < 1e-9) return +((mid * 100).toFixed(2));
   }
   return null;
 }
 
 function computeXIRR(trades, livePrice) {
   if (!trades?.length) return null;
+
+  // Build cashflows — BUY is outflow (negative), SELL is inflow (positive)
   const cashflows = trades.map(t => ({
     amount: t.type === "BUY" ? -Math.abs(t.amount) : +Math.abs(t.amount),
     date:   new Date(t.traded_at),
   }));
+
+  // Remaining shares valued at today's market price → terminal inflow
   const rem = trades.reduce((s, t) => s + (t.type === "BUY" ? t.shares : -t.shares), 0);
-  if (rem > 0 && livePrice > 0) cashflows.push({ amount: rem * livePrice, date: new Date() });
-  if (!cashflows.some(c => c.amount < 0) || !cashflows.some(c => c.amount > 0)) return null;
+  if (rem > 0.0001 && livePrice > 0) {
+    cashflows.push({ amount: rem * livePrice, date: new Date() });
+  }
+
   return xirr(cashflows);
+}
+
+// ─────────────────────────────────────────
+// EXCEL IMPORT PARSER
+// Handles the broker statement format:
+//   Sections: "Scrips Bought" / "Scrips Sold"
+//   Bought columns: Stock | Pur. Qty | Pur. Date | Pur. Price | ...
+//   Sold columns:   Stock | Pur. Price | Pur. Date | Sell Qty | Sell Price | Sell Date | ...
+//
+// Ticker extraction: "CG Power  (NSE)" → "CG POWER" cleaned, and we extract just the symbol
+// We store as the raw stock name cleaned up, since these are broker statement names not NSE tickers
+// ─────────────────────────────────────────
+function parseExcelTrades(buffer, filename) {
+  const ext = path.extname(filename).toLowerCase();
+  const wb  = XLSX.read(buffer, {
+    type: "buffer",
+    cellDates: true,
+    // For .xls (BIFF8) and .xlsx both
+  });
+
+  const ws      = wb.Sheets[wb.SheetNames[0]];
+  const rows    = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
+
+  const trades  = [];
+  const errors  = [];
+  let   section = null; // "BUY" | "SELL"
+
+  // Helper: extract clean ticker from names like "CG Power  (NSE)" or "KPIL - (NSE)"
+  function cleanTicker(raw) {
+    if (!raw) return null;
+    // Remove exchange suffix like "(NSE)", "- (NSE)", "(BSE)" etc.
+    let t = String(raw)
+      .replace(/\s*[-–]\s*\((?:NSE|BSE|NFO|MCX)\)\s*$/i, "")
+      .replace(/\s*\((?:NSE|BSE|NFO|MCX)\)\s*$/i, "")
+      .trim()
+      .toUpperCase();
+    // Remove special chars except space and &
+    t = t.replace(/[^A-Z0-9 &]/g, "").trim();
+    // Collapse spaces
+    t = t.replace(/\s+/g, " ").trim();
+    return t || null;
+  }
+
+  // Helper: parse dates in multiple formats
+  function parseDate(val) {
+    if (!val) return null;
+    const s = String(val).trim();
+    // DD-MM-YYYY
+    const m1 = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+    if (m1) return new Date(`${m1[3]}-${m1[2].padStart(2,"0")}-${m1[1].padStart(2,"0")}T12:00:00`);
+    // DD/MM/YYYY
+    const m2 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (m2) return new Date(`${m2[3]}-${m2[2].padStart(2,"0")}-${m2[1].padStart(2,"0")}T12:00:00`);
+    // YYYY-MM-DD
+    const m3 = s.match(/^\d{4}-\d{2}-\d{2}/);
+    if (m3) return new Date(s);
+    // JS Date object passed through xlsx cellDates
+    const d = new Date(val);
+    if (!isNaN(d)) return d;
+    return null;
+  }
+
+  function toNum(v) {
+    const n = parseFloat(String(v).replace(/,/g, ""));
+    return isNaN(n) ? null : n;
+  }
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const first = String(row[0] || "").trim();
+
+    // Detect section headers
+    if (/scrips\s+bought/i.test(first))  { section = "BUY";  continue; }
+    if (/scrips\s+sold/i.test(first))    { section = "SELL"; continue; }
+    // Reset section on new major sections
+    if (/mutual funds|ulip|e-series|financial year|profit\/loss/i.test(first) && !row[1]) { section = null; continue; }
+
+    // Skip header rows and empty rows
+    if (!section) continue;
+    if (!first || /^stock$/i.test(first) || /^no\s/i.test(first)) continue;
+
+    try {
+      if (section === "BUY") {
+        // Stock | Pur. Qty | Pur. Date | Pur. Price | Latest Price | Latest Value | Broker
+        const ticker = cleanTicker(row[0]);
+        const qty    = toNum(row[1]);
+        const date   = parseDate(row[2]);
+        const price  = toNum(row[3]);
+
+        if (!ticker) { errors.push(`Row ${i+1}: Missing stock name`); continue; }
+        if (!qty || qty <= 0) { errors.push(`Row ${i+1} [${ticker}]: Invalid quantity "${row[1]}"`); continue; }
+        if (!date || isNaN(date)) { errors.push(`Row ${i+1} [${ticker}]: Invalid date "${row[2]}"`); continue; }
+        if (!price || price <= 0) { errors.push(`Row ${i+1} [${ticker}]: Invalid price "${row[3]}"`); continue; }
+
+        trades.push({
+          ticker,
+          type:      "BUY",
+          shares:    qty,
+          price,
+          amount:    qty * price,
+          traded_at: date.toISOString(),
+          notes:     `Imported from broker statement`,
+        });
+
+      } else if (section === "SELL") {
+        // Stock | Pur. Price | Pur. Date | Sell Qty | Sell Price | Sell Date | Profit | Broker
+        const ticker    = cleanTicker(row[0]);
+        const purPrice  = toNum(row[1]);
+        const purDate   = parseDate(row[2]);
+        const sellQty   = toNum(row[3]);
+        const sellPrice = toNum(row[4]);
+        const sellDate  = parseDate(row[5]);
+
+        if (!ticker) { errors.push(`Row ${i+1}: Missing stock name`); continue; }
+        if (!sellQty || sellQty <= 0) { errors.push(`Row ${i+1} [${ticker}]: Invalid sell qty "${row[3]}"`); continue; }
+        if (!sellPrice || sellPrice <= 0) { errors.push(`Row ${i+1} [${ticker}]: Invalid sell price "${row[4]}"`); continue; }
+
+        // Insert the original BUY (from purchase history in sold section)
+        if (purPrice && purPrice > 0 && purDate && !isNaN(purDate)) {
+          trades.push({
+            ticker,
+            type:      "BUY",
+            shares:    sellQty,
+            price:     purPrice,
+            amount:    sellQty * purPrice,
+            traded_at: purDate.toISOString(),
+            notes:     `Imported (original buy for sold lot)`,
+          });
+        }
+
+        // Insert the SELL
+        const sd = sellDate && !isNaN(sellDate) ? sellDate : new Date();
+        trades.push({
+          ticker,
+          type:      "SELL",
+          shares:    sellQty,
+          price:     sellPrice,
+          amount:    sellQty * sellPrice,
+          traded_at: sd.toISOString(),
+          notes:     `Imported from broker statement`,
+        });
+      }
+    } catch (err) {
+      errors.push(`Row ${i+1}: ${err.message}`);
+    }
+  }
+
+  return { trades, errors };
 }
 
 // ─────────────────────────────────────────
@@ -191,50 +355,39 @@ async function fetchNSEPrice(ticker) {
 // ─────────────────────────────────────────
 // ROUTES — AUTH
 // ─────────────────────────────────────────
-
-// POST /api/auth/signup
 app.post("/api/auth/signup", async (req, res) => {
   const { email, password, name } = req.body;
   if (!email || !password) return res.status(400).json({ success: false, error: "email and password required" });
   if (password.length < 6)  return res.status(400).json({ success: false, error: "Password must be at least 6 characters" });
-
   const exists = db.prepare("SELECT id FROM users WHERE email=?").get(email.toLowerCase());
   if (exists) return res.status(400).json({ success: false, error: "Email already registered" });
-
   const hashed = await bcrypt.hash(password, 10);
   const result = db.prepare("INSERT INTO users (email, password, name) VALUES (?,?,?)").run(
     email.toLowerCase(), hashed, name || email.split("@")[0]
   );
-
   const token = jwt.sign({ id: result.lastInsertRowid, email: email.toLowerCase() }, JWT_SECRET, { expiresIn: "30d" });
   res.json({ success: true, token, user: { id: result.lastInsertRowid, email: email.toLowerCase(), name: name || email.split("@")[0] } });
 });
 
-// POST /api/auth/login
 app.post("/api/auth/login", async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ success: false, error: "email and password required" });
-
   const user = db.prepare("SELECT * FROM users WHERE email=?").get(email.toLowerCase());
   if (!user) return res.status(401).json({ success: false, error: "Invalid email or password" });
-
   const valid = await bcrypt.compare(password, user.password);
   if (!valid) return res.status(401).json({ success: false, error: "Invalid email or password" });
-
   const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: "30d" });
   res.json({ success: true, token, user: { id: user.id, email: user.email, name: user.name } });
 });
 
-// GET /api/auth/me
 app.get("/api/auth/me", auth, (req, res) => {
   const user = db.prepare("SELECT id, email, name, created_at FROM users WHERE id=?").get(req.user.id);
   res.json({ success: true, user });
 });
 
 // ─────────────────────────────────────────
-// ROUTES — STOCK PRICE (public, no auth needed)
+// ROUTES — STOCK PRICE
 // ─────────────────────────────────────────
-
 app.get("/api/stock/:ticker", async (req, res) => {
   try {
     res.json({ success: true, data: await fetchNSEPrice(req.params.ticker.toUpperCase()) });
@@ -243,17 +396,16 @@ app.get("/api/stock/:ticker", async (req, res) => {
 
 app.get("/api/stock/:ticker/sip", auth, async (req, res) => {
   try {
-    const ticker   = req.params.ticker.toUpperCase();
-    const stock    = await fetchNSEPrice(ticker);
-    const cfg      = getOrSeedSIP(req.user.id);
-    const levels   = JSON.parse(cfg.levels);
-    const budget   = cfg.max_budget;
-    const fallPct  = ((stock.price - stock.ath) / stock.ath) * 100;
+    const ticker  = req.params.ticker.toUpperCase();
+    const stock   = await fetchNSEPrice(ticker);
+    const cfg     = getOrSeedSIP(req.user.id);
+    const levels  = JSON.parse(cfg.levels);
+    const budget  = cfg.max_budget;
+    const fallPct = ((stock.price - stock.ath) / stock.ath) * 100;
     const analysis = levels.map(l => {
       const amount       = Math.round((l.allocation / 100) * budget);
       const triggerPrice = Math.round(stock.ath * (1 + l.fall / 100));
-      const triggered    = fallPct <= l.fall;
-      return { ...l, amount, triggerPrice, triggered };
+      return { ...l, amount, triggerPrice, triggered: fallPct <= l.fall };
     });
     const triggered       = analysis.filter(a => a.triggered);
     const totalDeployable = triggered.reduce((s, a) => s + a.amount, 0);
@@ -262,9 +414,8 @@ app.get("/api/stock/:ticker/sip", auth, async (req, res) => {
 });
 
 // ─────────────────────────────────────────
-// ROUTES — PORTFOLIO (user-scoped)
+// ROUTES — PORTFOLIO
 // ─────────────────────────────────────────
-
 app.get("/api/portfolio", auth, async (req, res) => {
   const uid      = req.user.id;
   const holdings = db.prepare("SELECT * FROM portfolio WHERE user_id=? ORDER BY added_at DESC").all(uid);
@@ -274,7 +425,7 @@ app.get("/api/portfolio", auth, async (req, res) => {
       const value   = stock.price * h.shares;
       const cost    = h.avg_price * h.shares;
       const pnl     = value - cost;
-      const pnlPct  = ((stock.price - h.avg_price) / h.avg_price) * 100;
+      const pnlPct  = cost > 0 ? ((stock.price - h.avg_price) / h.avg_price) * 100 : 0;
       const trades  = db.prepare("SELECT * FROM trade_history WHERE user_id=? AND ticker=? ORDER BY traded_at ASC").all(uid, h.ticker);
       const xirrPct = computeXIRR(trades, stock.price);
       return { ...h, livePrice: stock.price, name: stock.name, changePct: stock.changePct, change: stock.change, value, cost, pnl, pnlPct: +pnlPct.toFixed(2), xirrPct };
@@ -303,7 +454,7 @@ app.delete("/api/portfolio/:id", auth, (req, res) => {
   res.json({ success: true });
 });
 
-// GET /api/portfolio/:ticker/xirr
+// GET /api/portfolio/:ticker/xirr — detailed XIRR breakdown
 app.get("/api/portfolio/:ticker/xirr", auth, async (req, res) => {
   try {
     const uid    = req.user.id;
@@ -317,17 +468,93 @@ app.get("/api/portfolio/:ticker/xirr", auth, async (req, res) => {
       runningShares += t.type === "BUY" ? t.shares : -t.shares;
       return { date: t.traded_at, type: t.type, shares: t.shares, price: t.price, cashflow: t.type === "BUY" ? -t.amount : +t.amount, runningShares: +runningShares.toFixed(4) };
     });
-    if (runningShares > 0) cashflows.push({ date: new Date().toISOString(), type: "CURRENT_VALUE", shares: +runningShares.toFixed(4), price: stock.price, cashflow: +(runningShares * stock.price).toFixed(2), runningShares: +runningShares.toFixed(4) });
+    if (runningShares > 0.0001) cashflows.push({ date: new Date().toISOString(), type: "CURRENT_VALUE", shares: +runningShares.toFixed(4), price: stock.price, cashflow: +(runningShares * stock.price).toFixed(2), runningShares: +runningShares.toFixed(4) });
     res.json({ success: true, ticker, xirrPct, livePrice: stock.price, cashflows });
   } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 });
 
 // ─────────────────────────────────────────
-// ROUTES — WATCHLIST (user-scoped)
+// ROUTES — EXCEL IMPORT
+// POST /api/trades/import
 // ─────────────────────────────────────────
+app.post("/api/trades/import", auth, upload.single("file"), (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, error: "No file uploaded" });
 
+    const ext = path.extname(req.file.originalname).toLowerCase();
+    if (![".xls", ".xlsx", ".xlsm"].includes(ext))
+      return res.status(400).json({ success: false, error: "Only .xls / .xlsx files are supported" });
+
+    const { trades, errors } = parseExcelTrades(req.file.buffer, req.file.originalname);
+
+    if (!trades.length)
+      return res.json({ success: false, error: "No valid trades found in file", parseErrors: errors });
+
+    const uid       = req.user.id;
+    let   imported  = 0;
+    let   skipped   = 0;
+    const importErrors = [...errors];
+
+    // Insert trades in a transaction
+    const insertTrade = db.prepare(
+      "INSERT INTO trade_history (user_id, ticker, type, shares, price, amount, notes, traded_at) VALUES (?,?,?,?,?,?,?,?)"
+    );
+    const getPortfolio = db.prepare("SELECT * FROM portfolio WHERE user_id=? AND ticker=?");
+    const insertPort   = db.prepare("INSERT OR IGNORE INTO portfolio (user_id, ticker, shares, avg_price, notes) VALUES (?,?,?,?,?)");
+    const updatePort   = db.prepare("UPDATE portfolio SET shares=?, avg_price=? WHERE user_id=? AND ticker=?");
+    const deletePort   = db.prepare("DELETE FROM portfolio WHERE user_id=? AND ticker=?");
+
+    const doImport = db.transaction(() => {
+      for (const t of trades) {
+        try {
+          insertTrade.run(uid, t.ticker, t.type, t.shares, t.price, t.amount, t.notes, t.traded_at);
+
+          if (t.type === "BUY") {
+            const ex = getPortfolio.get(uid, t.ticker);
+            if (ex) {
+              const ns = ex.shares + t.shares;
+              const np = ((ex.avg_price * ex.shares) + (t.price * t.shares)) / ns;
+              updatePort.run(ns, +np.toFixed(4), uid, t.ticker);
+            } else {
+              insertPort.run(uid, t.ticker, t.shares, t.price, "Imported");
+            }
+          }
+
+          if (t.type === "SELL") {
+            const ex = getPortfolio.get(uid, t.ticker);
+            if (ex) {
+              const ns = ex.shares - t.shares;
+              if (ns <= 0.0001) deletePort.run(uid, t.ticker);
+              else updatePort.run(+ns.toFixed(4), ex.avg_price, uid, t.ticker);
+            }
+          }
+
+          imported++;
+        } catch (err) {
+          importErrors.push(`[${t.ticker}] ${t.type}: ${err.message}`);
+          skipped++;
+        }
+      }
+    });
+
+    doImport();
+
+    res.json({
+      success: true,
+      summary: { total: trades.length, imported, skipped },
+      parseErrors: importErrors,
+    });
+
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────
+// ROUTES — WATCHLIST
+// ─────────────────────────────────────────
 app.get("/api/watchlist", auth, async (req, res) => {
-  const items    = db.prepare("SELECT * FROM watchlist WHERE user_id=? ORDER BY added_at DESC").all(req.user.id);
+  const items = db.prepare("SELECT * FROM watchlist WHERE user_id=? ORDER BY added_at DESC").all(req.user.id);
   const enriched = await Promise.all(items.map(async w => {
     try { return { ...w, ...(await fetchNSEPrice(w.ticker)) }; }
     catch { return { ...w, price: null }; }
@@ -348,9 +575,8 @@ app.delete("/api/watchlist/:ticker", auth, (req, res) => {
 });
 
 // ─────────────────────────────────────────
-// ROUTES — SIP CONFIG (user-scoped)
+// ROUTES — SIP CONFIG
 // ─────────────────────────────────────────
-
 app.get("/api/sip-config", auth, (req, res) => {
   const cfg = getOrSeedSIP(req.user.id);
   res.json({ success: true, data: { ...cfg, levels: JSON.parse(cfg.levels) } });
@@ -366,9 +592,8 @@ app.put("/api/sip-config", auth, (req, res) => {
 });
 
 // ─────────────────────────────────────────
-// ROUTES — TRADES (user-scoped)
+// ROUTES — TRADE HISTORY
 // ─────────────────────────────────────────
-
 app.get("/api/trades", auth, (req, res) => {
   const { ticker, type, limit = 100 } = req.query;
   let query = "SELECT * FROM trade_history WHERE user_id=?";
@@ -393,7 +618,7 @@ app.post("/api/trades", auth, (req, res) => {
     if (ex) {
       const ns = ex.shares + shares;
       const np = ((ex.avg_price * ex.shares) + (price * shares)) / ns;
-      db.prepare("UPDATE portfolio SET shares=?, avg_price=? WHERE id=? AND user_id=?").run(ns, +np.toFixed(2), ex.id, uid);
+      db.prepare("UPDATE portfolio SET shares=?, avg_price=? WHERE id=? AND user_id=?").run(ns, +np.toFixed(4), ex.id, uid);
     } else {
       db.prepare("INSERT INTO portfolio (user_id, ticker, shares, avg_price) VALUES (?,?,?,?)").run(uid, ticker.toUpperCase(), shares, price);
     }
@@ -404,7 +629,7 @@ app.post("/api/trades", auth, (req, res) => {
     if (ex) {
       const ns = ex.shares - shares;
       if (ns <= 0) db.prepare("DELETE FROM portfolio WHERE id=? AND user_id=?").run(ex.id, uid);
-      else db.prepare("UPDATE portfolio SET shares=? WHERE id=? AND user_id=?").run(ns, ex.id, uid);
+      else db.prepare("UPDATE portfolio SET shares=? WHERE id=? AND user_id=?").run(+ns.toFixed(4), ex.id, uid);
     }
   }
 
