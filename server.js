@@ -9,7 +9,8 @@ const XLSX     = require("xlsx");
 const path     = require("path");
 
 const app = express();
-const db  = new Database("portflow.db");
+const dbPath = process.env.VERCEL ? path.join("/tmp", "portflow.db") : "portflow.db";
+const db  = new Database(dbPath);
 
 const JWT_SECRET = process.env.JWT_SECRET || "portflow_secret_change_in_prod";
 const upload     = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
@@ -580,4 +581,8 @@ app.put("/api/sip-config", auth, (req,res)=>{
 app.get("/api/health", (req,res)=>res.json({success:true,status:"ok",timestamp:new Date().toISOString()}));
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`✅ PORTFLOW backend running on http://localhost:${PORT}`));
+if (require.main === module) {
+  app.listen(PORT, () => console.log(`✅ PORTFLOW backend running on http://localhost:${PORT}`));
+}
+
+module.exports = app;

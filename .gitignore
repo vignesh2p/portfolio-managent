@@ -1,0 +1,4 @@
+node_modules/
+.vercel/
+portflow.db
+npm-debug.log*
