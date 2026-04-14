@@ -119,6 +119,7 @@ input,button,select{font-family:'DM Mono',monospace}
 .port-row:hover{background:rgba(255,255,255,.02)}
 .ph-ticker{font-size:14px;font-weight:600;letter-spacing:-.3px}
 .ph-name{font-size:11px;color:rgba(255,255,255,.3);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px}
+.ph-code{font-size:10px;color:rgba(125,211,252,.8);margin-top:4px;font-family:'DM Mono',monospace;letter-spacing:.5px}
 .cmp-cell{font-size:13px;font-weight:600}
 .cmp-change{font-size:11px;margin-top:2px}
 .change-up{color:#00ffb4}.change-dn{color:#ff6b6b}
@@ -387,6 +388,7 @@ let previewedTrades = [];
 // Live portfolio state — updated as prices arrive
 let portfolioHoldings = [];
 let priceMap = {}; // ticker → { price, changePct, change, name, ath }
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 const fmt  = n => new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:0}).format(n);
 const fmtD = n => new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:2}).format(n);
@@ -394,7 +396,14 @@ const fmtD = n => new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR'
 async function api(path, opts={}) {
   const headers={'Content-Type':'application/json',...(TOKEN?{Authorization:`Bearer ${TOKEN}`}:{})};
   const r=await fetch(BASE+path,{headers,...opts});
-  const j=await r.json();
+  const raw=await r.text();
+  let j;
+  try{
+    j=raw?JSON.parse(raw):{success:false,error:'Empty response from server'};
+  }catch{
+    const brief=raw.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().slice(0,180);
+    j={success:false,error:brief||`Server returned ${r.status}`};
+  }
   if(r.status===401){doLogout();return j;}
   return j;
 }
@@ -559,7 +568,11 @@ async function loadPortfolio(){
 
   for(const ticker of tickers){
     try{
-      const pr = await api(`/api/price/${ticker}`);
+      let pr = await api(`/api/price/${ticker}`);
+      if(!(pr.success && pr.data && pr.data.price)){
+        await delay(900);
+        pr = await api(`/api/price/${ticker}`);
+      }
       if(pr.success && pr.data && pr.data.price){
         priceMap[ticker] = pr.data;
         // Update this specific row in the DOM
@@ -575,6 +588,7 @@ async function loadPortfolio(){
     loaded++;
     progressBar.style.width = `${(loaded/tickers.length)*100}%`;
     updateSummaryCards(totalCost);
+    await delay(350);
   }
 
   // 7. Hide progress bar after all done
@@ -583,8 +597,8 @@ async function loadPortfolio(){
     const loaded=Object.values(priceMap).filter(Boolean).length;
     const failed=tickers.length-loaded;
     document.getElementById('price-status').textContent=
-      failed>0 ? `⚠ ${loaded}/${tickers.length} prices loaded · ${failed} failed (NSE may be rate-limiting)` :
-                 `✓ All ${loaded} prices loaded · NSE India · 5min cache`;
+      failed>0 ? `⚠ ${loaded}/${tickers.length} prices loaded · ${failed} failed (Google Finance may be rate-limiting)` :
+                 `✓ All ${loaded} prices loaded · Google Finance · 5min cache`;
   },300);
 }
 
@@ -593,7 +607,8 @@ function renderPortfolioTable(){
     <div class="port-row" id="port-row-${h.ticker}" onclick="showXIRR('${h.ticker}')">
       <div>
         <div class="ph-ticker">${h.ticker}</div>
-        <div class="ph-name" id="ph-name-${h.ticker}">—</div>
+        <div class="ph-name" id="ph-name-${h.ticker}">${h.company_name||'—'}</div>
+        <div class="ph-code" id="ph-code-${h.ticker}">${h.google_code||h.exchange||'Resolving code…'}</div>
       </div>
       <div style="font-size:13px;color:rgba(255,255,255,.6)">${h.shares}</div>
       <div id="ph-cmp-${h.ticker}"><div class="cmp-loading"><span class="spinner spinner-sm"></span>Fetching…</div></div>
@@ -624,6 +639,8 @@ function updatePortfolioRow(ticker, priceData){
   // Name
   const nameEl=document.getElementById(`ph-name-${ticker}`);
   if(nameEl) nameEl.textContent = priceData.name||ticker;
+  const codeEl=document.getElementById(`ph-code-${ticker}`);
+  if(codeEl) codeEl.textContent = priceData.googleCode || h.google_code || h.exchange || 'Code unavailable';
 
   // CMP
   const cmpEl=document.getElementById(`ph-cmp-${ticker}`);
@@ -864,3 +881,5 @@ async function saveSIPConfig(){
 </script>
 </body>
 </html>
+
+

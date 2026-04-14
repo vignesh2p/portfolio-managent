@@ -16,7 +16,12 @@ const JWT_SECRET = process.env.JWT_SECRET || "portflow_secret_change_in_prod";
 const upload     = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "5mb" }));
+app.use(express.static(__dirname));
+
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "portflow.html"));
+});
 
 // ─────────────────────────────────────────
 // DATABASE
@@ -33,6 +38,10 @@ db.exec(`
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id    INTEGER NOT NULL REFERENCES users(id),
     ticker     TEXT    NOT NULL,
+    company_name TEXT,
+    exchange   TEXT,
+    google_code TEXT,
+    bse_code   TEXT,
     shares     REAL    NOT NULL,
     avg_price  REAL    NOT NULL,
     notes      TEXT,
@@ -57,6 +66,10 @@ db.exec(`
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id    INTEGER NOT NULL REFERENCES users(id),
     ticker     TEXT    NOT NULL,
+    company_name TEXT,
+    exchange   TEXT,
+    google_code TEXT,
+    bse_code   TEXT,
     type       TEXT    NOT NULL CHECK(type IN ('BUY','SELL')),
     shares     REAL    NOT NULL,
     price      REAL    NOT NULL,
@@ -66,13 +79,40 @@ db.exec(`
   );
 `);
 
+function ensureColumn(table, column, definition) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!cols.some(c => c.name === column)) {
+    db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`).run();
+  }
+}
+
+ensureColumn("portfolio", "company_name", "TEXT");
+ensureColumn("portfolio", "exchange", "TEXT");
+ensureColumn("portfolio", "google_code", "TEXT");
+ensureColumn("portfolio", "bse_code", "TEXT");
+ensureColumn("trade_history", "company_name", "TEXT");
+ensureColumn("trade_history", "exchange", "TEXT");
+ensureColumn("trade_history", "google_code", "TEXT");
+ensureColumn("trade_history", "bse_code", "TEXT");
+
 // ─────────────────────────────────────────
 // AUTH
 // ─────────────────────────────────────────
 function auth(req, res, next) {
   const token = (req.headers.authorization || "").replace("Bearer ", "");
   if (!token) return res.status(401).json({ success: false, error: "No token" });
-  try { req.user = jwt.verify(token, JWT_SECRET); next(); }
+  try {
+    req.user = jwt.verify(token, JWT_SECRET);
+    const user = db.prepare("SELECT id,email,name,created_at FROM users WHERE id=?").get(req.user.id);
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: "Session data is no longer available on the server. Please sign in again.",
+      });
+    }
+    req.user = { ...req.user, dbUser: user };
+    next();
+  }
   catch { res.status(401).json({ success: false, error: "Invalid or expired token" }); }
 }
 
@@ -143,71 +183,330 @@ function computeXIRR(trades, livePrice) {
 // ─────────────────────────────────────────
 const priceCache = {};
 const CACHE_TTL  = 5 * 60 * 1000;
-let   nseSession = null;
-let   nseLastWarm = 0;
+const instrumentCache = {};
 
-async function warmNSE() {
-  if (Date.now() - nseLastWarm < 8 * 60 * 1000) return;
-  try {
-    const r = await axios.get("https://www.nseindia.com", {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-IN,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Connection": "keep-alive",
-      },
-      timeout: 10000,
-    });
-    const cookies = (r.headers["set-cookie"] || []).map(c => c.split(";")[0]).join("; ");
-    if (cookies) { nseSession = cookies; nseLastWarm = Date.now(); }
-  } catch { /* will retry next time */ }
+function cleanLookupText(raw) {
+  return String(raw || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, " ")
+    .replace(/\b(LTD|LIMITED|INDUSTRIES|INDUSTRY|CORPORATION|CORP|COMPANY|CO|THE)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-async function fetchPrice(ticker) {
-  const cached = priceCache[ticker];
-  if (cached && Date.now() - cached.cachedAt < CACHE_TTL) return cached;
+function moneycontrolInstrument(ticker, companyName, exchange, bseCode = null) {
+  const googleCode = exchange === "BSE" ? `BOM:${bseCode}` : `${exchange}:${ticker}`;
+  return {
+    ticker,
+    company_name: companyName,
+    exchange,
+    google_code: googleCode,
+    bse_code: bseCode,
+    nse_code: exchange === "NSE" ? ticker : null,
+    source: "moneycontrol-priority",
+  };
+}
 
-  await warmNSE();
+const moneycontrolPriorityMap = {
+  "AARTI IND": moneycontrolInstrument("AARTIIND", "Aarti Industries Ltd", "NSE", "524208"),
+  "ALKYL AMINES": moneycontrolInstrument("ALKYLAMINE", "Alkyl Amines Chemicals Ltd", "NSE", "506767"),
+  "ANANT RAJ": moneycontrolInstrument("ANANTRAJ", "Anant Raj Ltd", "NSE", "515055"),
+  "ANGEL ONE": moneycontrolInstrument("ANGELONE", "Angel One Ltd", "NSE", "543235"),
+  "APOLLO PIPES": moneycontrolInstrument("APOLLOPIPE", "Apollo Pipes Ltd", "NSE", "531761"),
+  "ASIAN PAINTS": moneycontrolInstrument("ASIANPAINT", "Asian Paints Ltd", "NSE", "500820"),
+  "BAJAJ FINANCE": moneycontrolInstrument("BAJFINANCE", "Bajaj Finance Ltd", "NSE", "500034"),
+  "BALAJI AMINES": moneycontrolInstrument("BALAMINES", "Balaji Amines Ltd", "NSE", "530999"),
+  "BALU FORGE INDU": moneycontrolInstrument("BALUFORGE", "Balu Forge Industries Ltd", "NSE", "531112"),
+  "BANCO PRODUCTS": moneycontrolInstrument("BANCOINDIA", "Banco Products (India) Ltd", "NSE", "500039"),
+  "CAPLIN LABS": moneycontrolInstrument("CAPLIPOINT", "Caplin Point Laboratories Ltd", "NSE", "524742"),
+  "CDSL": moneycontrolInstrument("CDSL", "Central Depository Services (India) Ltd", "NSE", null),
+  "CEINSYS TECH": moneycontrolInstrument("CEINSYS", "Ceinsys Tech Ltd", "NSE", "538734"),
+  "CG POWER": moneycontrolInstrument("CGPOWER", "CG Power and Industrial Solutions Ltd", "NSE", "500093"),
+  "COFORGE": moneycontrolInstrument("COFORGE", "Coforge Ltd", "NSE", "532541"),
+  "COSMO FIRST": moneycontrolInstrument("COSMOFIRST", "Cosmo First Ltd", "NSE", "508814"),
+  "DEEPAK NITRITE": moneycontrolInstrument("DEEPAKNTR", "Deepak Nitrite Ltd", "NSE", "506401"),
+  "D LINK INDIA": moneycontrolInstrument("DLINKINDIA", "D-Link India Ltd", "NSE", "533146"),
+  "DYNAMIC CABLES": moneycontrolInstrument("DYCL", "Dynamic Cables Ltd", "NSE", "540795"),
+  "ELGI EQUIPMENTS": moneycontrolInstrument("ELGIEQUIP", "Elgi Equipments Ltd", "NSE", "522074"),
+  "FLUIDOMAT": moneycontrolInstrument("522017", "Fluidomat Ltd", "BSE", "522017"),
+  "FUSION FINANCE": moneycontrolInstrument("FUSION", "Fusion Finance Ltd", "NSE", "543652"),
+  "GALLANTT ISPAT": moneycontrolInstrument("GALLANTT", "Gallantt Ispat Ltd", "NSE", "532726"),
+  "GANESH HOUSING": moneycontrolInstrument("GANESHHOUC", "Ganesh Housing Corporation Ltd", "NSE", "526367"),
+  "GARDEN REACH SH": moneycontrolInstrument("GRSE", "Garden Reach Shipbuilders & Engineers Ltd", "NSE", "542011"),
+  "GARWARE HITECH": moneycontrolInstrument("GRWRHITECH", "Garware Hi-Tech Films Ltd", "NSE", "509557"),
+  "HBL ENG": moneycontrolInstrument("HBLENGINE", "HBL Engineering Ltd", "NSE", "517271"),
+  "ICE MAKE REFRIG": moneycontrolInstrument("ICEMAKE", "Ice Make Refrigeration Ltd", "NSE", "541634"),
+  "INDRAPRASTHA": moneycontrolInstrument("IGL", "Indraprastha Gas Ltd", "NSE", "532514"),
+  "IRFC": moneycontrolInstrument("IRFC", "Indian Railway Finance Corporation Ltd", "NSE", "543257"),
+  "J K CEMENT": moneycontrolInstrument("JKCEMENT", "JK Cement Ltd", "NSE", "532644"),
+  "JTL IND": moneycontrolInstrument("JTLIND", "JTL Industries Ltd", "NSE", "534600"),
+  "KPIGREEN": moneycontrolInstrument("KPIGREEN", "KPI Green Energy Ltd", "NSE", "542323"),
+  "KPIL": moneycontrolInstrument("KALPATPOWR", "Kalpataru Projects International Ltd", "NSE", "522287"),
+  "KPIT TECH": moneycontrolInstrument("KPITTECH", "KPIT Technologies Ltd", "NSE", "542651"),
+  "L T TECHNOLOGY": moneycontrolInstrument("LTTS", "L&T Technology Services Ltd", "NSE", "540115"),
+  "LAURUS LABS": moneycontrolInstrument("LAURUSLABS", "Laurus Labs Ltd", "NSE", "540222"),
+  "LIC HOUSING FIN": moneycontrolInstrument("LICHSGFIN", "LIC Housing Finance Ltd", "NSE", "500253"),
+  "LINCOLN PHARMA": moneycontrolInstrument("LINCOLN", "Lincoln Pharmaceuticals Ltd", "NSE", "531633"),
+  "LT FOODS": moneycontrolInstrument("LTFOODS", "LT Foods Ltd", "NSE", "532783"),
+  "LUMAX AUTO TECH": moneycontrolInstrument("LUMAXTECH", "Lumax Auto Technologies Ltd", "NSE", "532796"),
+  "MANORAMA INDUST": moneycontrolInstrument("MANORAMA", "Manorama Industries Ltd", "NSE", "541974"),
+  "MAZAGON DOCK": moneycontrolInstrument("MAZDOCK", "Mazagon Dock Shipbuilders Ltd", "NSE", "543237"),
+  "MOTILAL OSWAL": moneycontrolInstrument("MOTILALOFS", "Motilal Oswal Financial Services Ltd", "NSE", "532892"),
+  "NDR AUTO COMPON": moneycontrolInstrument("NDRAUTO", "NDR Auto Components Ltd", "NSE", "543214"),
+  "PEARL GLOBAL IN": moneycontrolInstrument("PGIL", "Pearl Global Industries Ltd", "NSE", "532808"),
+  "PG ELECTROPLAST": moneycontrolInstrument("PGEL", "PG Electroplast Ltd", "NSE", "533581"),
+  "POLYCAB": moneycontrolInstrument("POLYCAB", "Polycab India Ltd", "NSE", "542652"),
+  "PREMIER POLYFIL": moneycontrolInstrument("PREMIERPOL", "Premier Polyfilm Ltd", "NSE", "514354"),
+  "RAIL VIKAS": moneycontrolInstrument("RVNL", "Rail Vikas Nigam Ltd", "NSE", "542649"),
+  "RAJRATAN GLOBAL": moneycontrolInstrument("RAJRATAN", "Rajratan Global Wire Ltd", "NSE", "517522"),
+  "RAMKRISHNAFORGE": moneycontrolInstrument("RKFORGE", "Ramkrishna Forgings Ltd", "NSE", "532527"),
+  "REFEX IND": moneycontrolInstrument("REFEX", "Refex Industries Ltd", "NSE", "532884"),
+  "RELAXO FOOTWEAR": moneycontrolInstrument("RELAXO", "Relaxo Footwears Ltd", "NSE", "530517"),
+  "SENCO GOLD": moneycontrolInstrument("SENCO", "Senco Gold Ltd", "NSE", "543936"),
+  "SHARE INDIA": moneycontrolInstrument("SHAREINDIA", "Share India Securities Ltd", "NSE", "540725"),
+  "SKIPPER": moneycontrolInstrument("SKIPPER", "Skipper Ltd", "NSE", "538562"),
+  "SKY GOLD": moneycontrolInstrument("SKYGOLD", "Sky Gold Ltd", "NSE", "541967"),
+  "STERLING TOOLS": moneycontrolInstrument("STERTOOLS", "Sterling Tools Ltd", "NSE", "530759"),
+  "TATA ELXSI": moneycontrolInstrument("TATAELXSI", "Tata Elxsi Ltd", "NSE", "500408"),
+  "TATA POWER": moneycontrolInstrument("TATAPOWER", "Tata Power Company Ltd", "NSE", "500400"),
+  "TD POWER SYSTEM": moneycontrolInstrument("TDPOWERSYS", "TD Power Systems Ltd", "NSE", "533553"),
+  "TIPS MUSIC": moneycontrolInstrument("TIPSMUSIC", "Tips Music Ltd", "NSE", "532375"),
+  "TITAN BIOTECH": moneycontrolInstrument("524717", "Titan Biotech Ltd", "BSE", "524717"),
+  "TITAN COMPANY": moneycontrolInstrument("TITAN", "Titan Company Ltd", "NSE", "500114"),
+  "TRANSFORMERS": moneycontrolInstrument("TARIL", "Transformers and Rectifiers (India) Ltd", "NSE", "532928"),
+  "VARUN BEVERAGES": moneycontrolInstrument("VBL", "Varun Beverages Ltd", "NSE", "540180"),
+  "VISHNU PRAKASH": moneycontrolInstrument("VPRPL", "Vishnu Prakash R Punglia Ltd", "NSE", "543974"),
+  "WAAREE RENEWABL": moneycontrolInstrument("WAAREERTL", "Waaree Renewable Technologies Ltd", "NSE", "534618"),
+  "WINDLAS BIOTECH": moneycontrolInstrument("WINDLAS", "Windlas Biotech Ltd", "NSE", "543329"),
+  "YATHARTH HOSP": moneycontrolInstrument("YATHARTH", "Yatharth Hospital & Trauma Care Services Ltd", "NSE", "543950"),
+};
+
+function resolveMoneycontrolPriority(query) {
+  return moneycontrolPriorityMap[cleanLookupText(query)] || null;
+}
+
+function decodeMoneycontrolText(raw) {
+  return String(raw || "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function scoreMoneycontrolCandidate(query, item) {
+  const cleanedQuery = cleanLookupText(query);
+  const queryTokens = cleanedQuery.split(" ").filter(Boolean);
+  const display = cleanLookupText(`${item.name || ""} ${decodeMoneycontrolText(item.pdt_dis_nm || "")}`);
+  let score = 0;
+  if (display === cleanedQuery) score += 120;
+  if (display.includes(cleanedQuery)) score += 70;
+  if (queryTokens.length && queryTokens.every(tok => display.includes(tok))) score += 40;
+  if (item.stock_name && cleanLookupText(item.stock_name) === cleanedQuery) score += 20;
+  return score;
+}
+
+function parseMoneycontrolInstrument(item) {
+  const display = decodeMoneycontrolText(item.pdt_dis_nm || "");
+  const companyName = decodeMoneycontrolText(item.name || item.stock_name || display);
+  const codePart = display.startsWith(companyName) ? display.slice(companyName.length).trim() : display;
+  const parts = codePart.split(",").map(s => s.trim()).filter(Boolean);
+  const nseCode = parts.length >= 2 ? parts[parts.length - 2].toUpperCase() : null;
+  const bseCode = parts.length >= 1 ? parts[parts.length - 1] : null;
+  const exchange = nseCode ? "NSE" : (bseCode ? "BSE" : null);
+  const ticker = nseCode || bseCode || cleanLookupText(companyName).replace(/\s+/g, "");
+  return {
+    ticker,
+    company_name: companyName,
+    exchange,
+    google_code: nseCode ? `NSE:${nseCode}` : (bseCode ? `BOM:${bseCode}` : null),
+    bse_code: bseCode,
+    nse_code: nseCode,
+    moneycontrol_link: item.link_src || null,
+    source: "moneycontrol-live",
+  };
+}
+
+async function resolveViaMoneycontrol(query) {
+  const url = `https://www.moneycontrol.com/mccode/common/autosuggestion_solr.php?classic=true&query=${encodeURIComponent(query)}&type=1&format=json&callback=suggest1`;
+  const res = await axios.get(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      "Accept": "*/*",
+      "Referer": "https://www.moneycontrol.com/",
+      "Accept-Language": "en-IN,en;q=0.9",
+    },
+    timeout: 12000,
+  });
+  const body = String(res.data || "");
+  const jsonpMatch = body.match(/^suggest1\((.*)\)\s*$/s);
+  if (!jsonpMatch) throw new Error(`Invalid Moneycontrol response for ${query}`);
+  const items = JSON.parse(jsonpMatch[1]);
+  if (!Array.isArray(items) || !items.length) throw new Error(`No Moneycontrol match found for ${query}`);
+
+  const best = [...items]
+    .map(item => ({ ...item, _score: scoreMoneycontrolCandidate(query, item) }))
+    .sort((a, b) => b._score - a._score)[0];
+
+  const parsed = parseMoneycontrolInstrument(best);
+  if (!parsed.google_code && !parsed.bse_code) throw new Error(`Moneycontrol did not return codes for ${query}`);
+  return parsed;
+}
+
+function extractScreenerCode(url) {
+  const match = String(url || "").match(/\/company\/([^\/]+)\//i);
+  return match ? match[1].toUpperCase() : null;
+}
+
+function scoreScreenerCandidate(query, item) {
+  const cleanedQuery = cleanLookupText(query);
+  const queryTokens = cleanedQuery.split(" ").filter(Boolean);
+  const candidateName = cleanLookupText(item.name);
+  const candidateCode = extractScreenerCode(item.url) || "";
+  let score = 0;
+  if (candidateCode === cleanedQuery.replace(/\s+/g, "")) score += 120;
+  if (candidateName === cleanedQuery) score += 100;
+  if (candidateName.includes(cleanedQuery)) score += 60;
+  if (queryTokens.length && queryTokens.every(tok => candidateName.includes(tok))) score += 30;
+  if (candidateCode && queryTokens.some(tok => candidateCode.includes(tok))) score += 10;
+  return score;
+}
+
+async function resolveInstrument(rawTicker) {
+  const query = String(rawTicker || "").trim();
+  if (!query) return null;
+  const cacheKey = cleanLookupText(query) || query.toUpperCase();
+  const cached = instrumentCache[cacheKey];
+  if (cached && Date.now() - cached.cachedAt < 24 * 60 * 60 * 1000) return cached.data;
+
+  const moneycontrolHit = resolveMoneycontrolPriority(query);
+  if (moneycontrolHit) {
+    instrumentCache[cacheKey] = { data: moneycontrolHit, cachedAt: Date.now() };
+    return moneycontrolHit;
+  }
+
+  try {
+    const moneycontrolLive = await resolveViaMoneycontrol(query);
+    instrumentCache[cacheKey] = { data: moneycontrolLive, cachedAt: Date.now() };
+    return moneycontrolLive;
+  } catch {}
 
   const headers = {
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "en-IN,en-GB;q=0.9,en-US;q=0.8",
-    "Referer": `https://www.nseindia.com/get-quotes/equity?symbol=${encodeURIComponent(ticker)}`,
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "X-Requested-With": "XMLHttpRequest",
-    "sec-fetch-dest": "empty",
-    "sec-fetch-mode": "cors",
-    "sec-fetch-site": "same-origin",
-    ...(nseSession ? { Cookie: nseSession } : {}),
+    "Accept": "application/json,text/plain,*/*",
+    "Accept-Language": "en-IN,en;q=0.9",
   };
 
-  const url = `https://www.nseindia.com/api/quote-equity?symbol=${encodeURIComponent(ticker)}`;
-  const res  = await axios.get(url, { headers, timeout: 12000 });
-  const d    = res.data;
+  const searchUrl = `https://www.screener.in/api/company/search/?q=${encodeURIComponent(query)}`;
+  const searchRes = await axios.get(searchUrl, { headers, timeout: 12000 });
+  const candidates = Array.isArray(searchRes.data) ? searchRes.data : [];
+  if (!candidates.length) throw new Error(`No Screener match found for ${query}`);
 
-  if (!d || typeof d !== "object") throw new Error("Invalid response from NSE");
-  const info = d.info      || {};
-  const pd   = d.priceInfo || {};
-  const wh52 = pd["52WeekHigh"] || pd.weekHigh52 || null;
-  const price = pd.lastPrice || pd.close || 0;
+  const best = [...candidates]
+    .map(item => ({ ...item, _score: scoreScreenerCandidate(query, item) }))
+    .sort((a, b) => b._score - a._score)[0];
 
-  if (!price) throw new Error(`No price in NSE response for ${ticker}`);
+  const screenerCode = extractScreenerCode(best.url) || query.toUpperCase();
+  const detailUrl = `https://www.screener.in${best.url}`;
+  const detailRes = await axios.get(detailUrl, {
+    headers: { ...headers, Accept: "text/html,application/xhtml+xml" },
+    timeout: 12000,
+  });
+  const html = String(detailRes.data || "");
 
-  const result = {
+  const nseMatch = html.match(/NSE:\s*<\/span>\s*([A-Z0-9\-]+)/i) || html.match(/NSE:\s*([A-Z0-9\-]+)/i);
+  const bseMatch = html.match(/BSE:\s*<\/span>\s*([0-9]+)/i) || html.match(/BSE:\s*([0-9]+)/i);
+  const titleMatch = html.match(/<title>([^<]+?)\s+share price/i);
+  const companyName = (titleMatch ? titleMatch[1] : best.name || query).trim();
+  const nseCode = nseMatch ? nseMatch[1].trim().toUpperCase() : null;
+  const bseCode = bseMatch ? bseMatch[1].trim() : null;
+  const ticker = (nseCode || screenerCode || query).toUpperCase();
+  const exchange = nseCode ? "NSE" : (bseCode ? "BSE" : null);
+  const googleCode = nseCode ? `NSE:${nseCode}` : (bseCode ? `BOM:${bseCode}` : `NSE:${ticker}`);
+
+  const data = {
     ticker,
-    name:      info.companyName || ticker,
-    exchange:  "NSE",
-    price,
-    prevClose: pd.previousClose || 0,
-    change:    pd.change    || 0,
-    changePct: pd.pChange   || 0,
-    week52High: wh52,
-    ath:       wh52 || price,
-    cachedAt:  Date.now(),
+    company_name: companyName,
+    exchange,
+    google_code: googleCode,
+    bse_code: bseCode,
+    nse_code: nseCode,
   };
-  priceCache[ticker] = result;
-  return result;
+  instrumentCache[cacheKey] = { data, cachedAt: Date.now() };
+  return data;
+}
+
+function parseGoogleFinanceQuote(html, googleCode, fallbackTicker) {
+  const exchangeMatch = html.match(/data-exchange="([^"]+)"/i);
+  const priceMatch = html.match(/data-last-price="([^"]+)"/i);
+  const titleMatch = html.match(/<title>([^<(]+?)\s+\([^)]+\)\s+Stock Price/i);
+  const pctLabel = html.match(/aria-label="(Up|Down) by ([0-9.,]+)%"/i);
+  const changeMatch = html.match(/aria-label="(?:Up|Down) by [0-9.,]+%".*?<span class="P2Luy[^"]*">([+-]?[₹0-9,.\-]+)/is);
+  const prevCloseMatch = html.match(/Previous close<\/div><div class="P6K39c">₹?([0-9,.\-]+)/i);
+  const yearRangeMatch = html.match(/Year range<\/div><div class="P6K39c">₹?([0-9,.\-]+)\s*-\s*₹?([0-9,.\-]+)/i);
+
+  const price = priceMatch ? parseFloat(priceMatch[1].replace(/,/g, "")) : 0;
+  if (!price) throw new Error(`No price found on Google Finance for ${googleCode}`);
+
+  const sign = pctLabel && /down/i.test(pctLabel[1]) ? -1 : 1;
+  const changePct = pctLabel ? sign * parseFloat(pctLabel[2].replace(/,/g, "")) : 0;
+  const change = changeMatch ? parseFloat(changeMatch[1].replace(/[₹,]/g, "")) : 0;
+  const prevClose = prevCloseMatch ? parseFloat(prevCloseMatch[1].replace(/,/g, "")) : (change ? price - change : 0);
+  const week52High = yearRangeMatch ? parseFloat(yearRangeMatch[2].replace(/,/g, "")) : price;
+  const [, fallbackExchange = "NSE", fallbackSymbol = fallbackTicker] = String(googleCode).match(/^([A-Z]+):(.+)$/i) || [];
+
+  return {
+    ticker: fallbackSymbol,
+    name: titleMatch ? titleMatch[1].trim() : fallbackTicker,
+    exchange: exchangeMatch ? exchangeMatch[1].trim().toUpperCase() : fallbackExchange.toUpperCase(),
+    price,
+    prevClose,
+    change,
+    changePct: Number.isFinite(changePct) ? +changePct.toFixed(2) : 0,
+    week52High,
+    ath: week52High || price,
+    googleCode,
+    cachedAt: Date.now(),
+  };
+}
+
+async function fetchPrice(ticker, opts = {}) {
+  const googleCode = opts.googleCode || `NSE:${ticker}`;
+  const cacheKey = googleCode.toUpperCase();
+  const cached = priceCache[cacheKey];
+  if (cached && Date.now() - cached.cachedAt < CACHE_TTL) return cached;
+
+  const url = `https://www.google.com/finance/quote/${encodeURIComponent(googleCode)}?hl=en`;
+  let lastErr = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await axios.get(url, {
+        headers: {
+          "User-Agent": attempt % 2
+            ? "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            : "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "en-IN,en;q=0.9",
+          "Referer": "https://www.google.com/finance/",
+          "Cache-Control": "no-cache",
+        },
+        timeout: 12000,
+      });
+      const result = parseGoogleFinanceQuote(String(res.data || ""), googleCode, ticker);
+      result.ticker = ticker;
+      if (opts.companyName && !result.name) result.name = opts.companyName;
+      if (opts.bseCode) result.bse_code = opts.bseCode;
+      priceCache[cacheKey] = result;
+      return result;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < 3) {
+        await new Promise(resolve => setTimeout(resolve, 700 * attempt));
+      }
+    }
+  }
+
+  throw lastErr || new Error(`Unable to fetch price for ${ticker}`);
 }
 
 // ─────────────────────────────────────────
@@ -356,18 +655,33 @@ app.post("/api/auth/login", async (req, res) => {
 });
 
 app.get("/api/auth/me", auth, (req, res) => {
-  const user = db.prepare("SELECT id,email,name,created_at FROM users WHERE id=?").get(req.user.id);
-  res.json({ success:true, user });
+  res.json({ success:true, user: req.user.dbUser });
 });
 
 // ─────────────────────────────────────────
 // ROUTES — PRICE  (one ticker at a time, called by frontend async)
 // GET /api/price/:ticker
 // ─────────────────────────────────────────
-app.get("/api/price/:ticker", auth, async (req, res) => {
+app.get("/api/price/:ticker", async (req, res) => {
   const ticker = req.params.ticker.toUpperCase();
   try {
-    const data = await fetchPrice(ticker);
+    let saved = null;
+    const authHeader = (req.headers.authorization || "").replace("Bearer ", "");
+    if (authHeader) {
+      try {
+        const decoded = jwt.verify(authHeader, JWT_SECRET);
+        const user = db.prepare("SELECT id FROM users WHERE id=?").get(decoded.id);
+        if (user) {
+          saved = db.prepare("SELECT ticker, company_name, google_code, bse_code FROM portfolio WHERE user_id=? AND ticker=?").get(user.id, ticker)
+            || db.prepare("SELECT ticker, company_name, google_code, bse_code FROM trade_history WHERE user_id=? AND ticker=? ORDER BY traded_at DESC LIMIT 1").get(user.id, ticker);
+        }
+      } catch {}
+    }
+    const data = await fetchPrice(ticker, {
+      googleCode: saved?.google_code || `NSE:${ticker}`,
+      companyName: saved?.company_name || ticker,
+      bseCode: saved?.bse_code || null,
+    });
     res.json({ success:true, data });
   } catch (err) {
     // Return partial data so frontend can still show the holding without CMP
@@ -376,11 +690,31 @@ app.get("/api/price/:ticker", auth, async (req, res) => {
 });
 
 // GET /api/stock/:ticker/sip  (used in SIP tab — needs price)
-app.get("/api/stock/:ticker/sip", auth, async (req, res) => {
+app.get("/api/stock/:ticker/sip", async (req, res) => {
   try {
     const ticker  = req.params.ticker.toUpperCase();
-    const stock   = await fetchPrice(ticker);
-    const cfg     = getOrSeedSIP(req.user.id);
+    let saved = null;
+    const authHeader = (req.headers.authorization || "").replace("Bearer ", "");
+    let userId = null;
+    if (authHeader) {
+      try {
+        const decoded = jwt.verify(authHeader, JWT_SECRET);
+        const user = db.prepare("SELECT id FROM users WHERE id=?").get(decoded.id);
+        if (user) userId = user.id;
+      } catch {}
+    }
+    if (userId) {
+      saved = db.prepare("SELECT ticker, company_name, google_code, bse_code FROM portfolio WHERE user_id=? AND ticker=?").get(userId, ticker);
+    }
+    const stock   = await fetchPrice(ticker, {
+      googleCode: saved?.google_code || `NSE:${ticker}`,
+      companyName: saved?.company_name || ticker,
+      bseCode: saved?.bse_code || null,
+    });
+    const cfg     = userId ? getOrSeedSIP(userId) : { max_budget: 50000, levels: JSON.stringify([
+      {fall:-10,allocation:10},{fall:-15,allocation:5},{fall:-20,allocation:20},
+      {fall:-25,allocation:10},{fall:-30,allocation:30},{fall:-35,allocation:15},{fall:-40,allocation:10}
+    ]) };
     const levels  = JSON.parse(cfg.levels);
     const budget  = cfg.max_budget;
     const fallPct = ((stock.price - stock.ath) / stock.ath) * 100;
@@ -426,7 +760,15 @@ app.get("/api/portfolio/:ticker/xirr", auth, async (req, res) => {
 
     // Get live price for current value (best effort)
     let livePrice = 0;
-    try { livePrice = (await fetchPrice(ticker)).price; } catch {}
+    const saved = db.prepare("SELECT company_name, google_code, bse_code FROM portfolio WHERE user_id=? AND ticker=?").get(uid, ticker)
+      || trades.find(Boolean);
+    try {
+      livePrice = (await fetchPrice(ticker, {
+        googleCode: saved?.google_code || `NSE:${ticker}`,
+        companyName: saved?.company_name || ticker,
+        bseCode: saved?.bse_code || null,
+      })).price;
+    } catch {}
 
     const xirrPct = computeXIRR(trades, livePrice);
     let rem = 0;
@@ -444,15 +786,17 @@ app.get("/api/portfolio/:ticker/xirr", auth, async (req, res) => {
 });
 
 app.post("/api/portfolio", auth, (req, res) => {
-  const { ticker, shares, avg_price, notes } = req.body;
+  const { ticker, shares, avg_price, notes, company_name, exchange, google_code, bse_code } = req.body;
   if (!ticker||!shares||!avg_price) return res.status(400).json({ success:false, error:"ticker, shares, avg_price required" });
-  const r = db.prepare("INSERT OR IGNORE INTO portfolio (user_id,ticker,shares,avg_price,notes) VALUES (?,?,?,?,?)").run(req.user.id, ticker.toUpperCase(), shares, avg_price, notes||null);
+  const r = db.prepare("INSERT OR IGNORE INTO portfolio (user_id,ticker,company_name,exchange,google_code,bse_code,shares,avg_price,notes) VALUES (?,?,?,?,?,?,?,?,?)")
+    .run(req.user.id, ticker.toUpperCase(), company_name || null, exchange || null, google_code || null, bse_code || null, shares, avg_price, notes||null);
   res.json({ success:true, id:r.lastInsertRowid });
 });
 
 app.put("/api/portfolio/:id", auth, (req, res) => {
-  const {shares,avg_price,notes}=req.body;
-  db.prepare("UPDATE portfolio SET shares=?,avg_price=?,notes=? WHERE id=? AND user_id=?").run(shares,avg_price,notes,req.params.id,req.user.id);
+  const {shares,avg_price,notes,company_name,exchange,google_code,bse_code}=req.body;
+  db.prepare("UPDATE portfolio SET shares=?,avg_price=?,notes=?,company_name=COALESCE(?,company_name),exchange=COALESCE(?,exchange),google_code=COALESCE(?,google_code),bse_code=COALESCE(?,bse_code) WHERE id=? AND user_id=?")
+    .run(shares,avg_price,notes,company_name||null,exchange||null,google_code||null,bse_code||null,req.params.id,req.user.id);
   res.json({ success:true });
 });
 
@@ -464,21 +808,24 @@ app.delete("/api/portfolio/:id", auth, (req, res) => {
 // ─────────────────────────────────────────
 // ROUTES — TRADES
 // ─────────────────────────────────────────
-function _syncPortfolio(uid, ticker, type, shares, price) {
+function _syncPortfolio(uid, ticker, type, shares, price, meta = {}) {
   const ex = db.prepare("SELECT * FROM portfolio WHERE user_id=? AND ticker=?").get(uid, ticker);
   if (type === "BUY") {
     if (ex) {
       const ns = ex.shares + shares;
       const np = ((ex.avg_price * ex.shares) + (price * shares)) / ns;
-      db.prepare("UPDATE portfolio SET shares=?,avg_price=? WHERE user_id=? AND ticker=?").run(+ns.toFixed(4), +np.toFixed(4), uid, ticker);
+      db.prepare("UPDATE portfolio SET shares=?,avg_price=?,company_name=COALESCE(?,company_name),exchange=COALESCE(?,exchange),google_code=COALESCE(?,google_code),bse_code=COALESCE(?,bse_code) WHERE user_id=? AND ticker=?")
+        .run(+ns.toFixed(4), +np.toFixed(4), meta.company_name || null, meta.exchange || null, meta.google_code || null, meta.bse_code || null, uid, ticker);
     } else {
-      db.prepare("INSERT INTO portfolio (user_id,ticker,shares,avg_price) VALUES (?,?,?,?)").run(uid, ticker, shares, price);
+      db.prepare("INSERT INTO portfolio (user_id,ticker,company_name,exchange,google_code,bse_code,shares,avg_price) VALUES (?,?,?,?,?,?,?,?)")
+        .run(uid, ticker, meta.company_name || null, meta.exchange || null, meta.google_code || null, meta.bse_code || null, shares, price);
     }
   }
   if (type === "SELL" && ex) {
     const ns = ex.shares - shares;
     if (ns <= 0.0001) db.prepare("DELETE FROM portfolio WHERE user_id=? AND ticker=?").run(uid, ticker);
-    else db.prepare("UPDATE portfolio SET shares=? WHERE user_id=? AND ticker=?").run(+ns.toFixed(4), uid, ticker);
+    else db.prepare("UPDATE portfolio SET shares=?,company_name=COALESCE(?,company_name),exchange=COALESCE(?,exchange),google_code=COALESCE(?,google_code),bse_code=COALESCE(?,bse_code) WHERE user_id=? AND ticker=?")
+      .run(+ns.toFixed(4), meta.company_name || null, meta.exchange || null, meta.google_code || null, meta.bse_code || null, uid, ticker);
   }
 }
 
@@ -492,11 +839,13 @@ app.get("/api/trades", auth, (req, res) => {
 });
 
 app.post("/api/trades", auth, (req, res) => {
-  const { ticker, type, shares, price, notes, traded_at } = req.body;
+  const { ticker, type, shares, price, notes, traded_at, company_name, exchange, google_code, bse_code } = req.body;
   if (!ticker||!type||!shares||!price) return res.status(400).json({ success:false, error:"ticker, type, shares, price required" });
   const uid=req.user.id, amount=shares*price, tradeDate=traded_at||new Date().toISOString();
-  const r=db.prepare("INSERT INTO trade_history (user_id,ticker,type,shares,price,amount,notes,traded_at) VALUES (?,?,?,?,?,?,?,?)").run(uid,ticker.toUpperCase(),type.toUpperCase(),shares,price,amount,notes||null,tradeDate);
-  _syncPortfolio(uid, ticker.toUpperCase(), type.toUpperCase(), shares, price);
+  const meta = { company_name, exchange, google_code, bse_code };
+  const r=db.prepare("INSERT INTO trade_history (user_id,ticker,company_name,exchange,google_code,bse_code,type,shares,price,amount,notes,traded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)")
+    .run(uid,ticker.toUpperCase(),company_name||null,exchange||null,google_code||null,bse_code||null,type.toUpperCase(),shares,price,amount,notes||null,tradeDate);
+  _syncPortfolio(uid, ticker.toUpperCase(), type.toUpperCase(), shares, price, meta);
   res.json({ success:true, id:r.lastInsertRowid });
 });
 
@@ -515,7 +864,7 @@ app.delete("/api/trades", auth, (req, res) => {
 // ─────────────────────────────────────────
 // EXCEL IMPORT
 // ─────────────────────────────────────────
-app.post("/api/trades/preview", auth, upload.array("files", 20), (req, res) => {
+app.post("/api/trades/preview", auth, upload.array("files", 20), async (req, res) => {
   if (!req.files?.length) return res.status(400).json({ success:false, error:"No files uploaded" });
   let allTrades=[], allErrors=[];
   for (const file of req.files) {
@@ -527,19 +876,44 @@ app.post("/api/trades/preview", auth, upload.array("files", 20), (req, res) => {
       allErrors = allErrors.concat(errors.map(e=>`[${file.originalname}] ${e}`));
     } catch(e) { allErrors.push(`${file.originalname}: ${e.message}`); }
   }
+  const metaByTicker = {};
+  for (const ticker of [...new Set(allTrades.map(t => t.ticker).filter(Boolean))]) {
+    try { metaByTicker[ticker] = await resolveInstrument(ticker); }
+    catch (e) { allErrors.push(`[${ticker}] Code lookup failed: ${e.message}`); }
+  }
+  allTrades = allTrades.map(t => ({ ...metaByTicker[t.ticker], ...t, ticker: (metaByTicker[t.ticker]?.ticker || t.ticker).toUpperCase() }));
   res.json({ success:true, trades:allTrades, errors:allErrors, total:allTrades.length });
 });
 
-app.post("/api/trades/import", auth, (req, res) => {
+app.post("/api/trades/import", auth, async (req, res) => {
   const { trades } = req.body;
   if (!trades?.length) return res.status(400).json({ success:false, error:"No trades provided" });
   const uid=req.user.id; let imported=0, skipped=0; const importErrors=[];
+  const metaByTicker = {};
+  for (const ticker of [...new Set(trades.map(t => t.ticker).filter(Boolean))]) {
+    const existing = trades.find(t => t.ticker === ticker && (t.google_code || t.company_name || t.bse_code || t.exchange));
+    if (existing) {
+      metaByTicker[ticker] = {
+        ticker: ticker.toUpperCase(),
+        company_name: existing.company_name || null,
+        exchange: existing.exchange || null,
+        google_code: existing.google_code || null,
+        bse_code: existing.bse_code || null,
+      };
+      continue;
+    }
+    try { metaByTicker[ticker] = await resolveInstrument(ticker); }
+    catch (e) { importErrors.push(`[${ticker}] Code lookup failed: ${e.message}`); }
+  }
   const doImport=db.transaction(()=>{
     for (const t of trades) {
       try {
         if (!t.ticker||!t.type||!t.shares||!t.price) throw new Error("missing fields");
-        db.prepare("INSERT INTO trade_history (user_id,ticker,type,shares,price,amount,notes,traded_at) VALUES (?,?,?,?,?,?,?,?)").run(uid,t.ticker,t.type,t.shares,t.price,t.amount,t.notes||null,t.traded_at||new Date().toISOString());
-        _syncPortfolio(uid, t.ticker, t.type, t.shares, t.price);
+        const meta = { ...(metaByTicker[t.ticker] || {}), company_name: t.company_name || metaByTicker[t.ticker]?.company_name || null, exchange: t.exchange || metaByTicker[t.ticker]?.exchange || null, google_code: t.google_code || metaByTicker[t.ticker]?.google_code || null, bse_code: t.bse_code || metaByTicker[t.ticker]?.bse_code || null };
+        const finalTicker = (meta.ticker || t.ticker).toUpperCase();
+        db.prepare("INSERT INTO trade_history (user_id,ticker,company_name,exchange,google_code,bse_code,type,shares,price,amount,notes,traded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)")
+          .run(uid,finalTicker,meta.company_name,meta.exchange,meta.google_code,meta.bse_code,t.type.toUpperCase(),t.shares,t.price,t.amount,t.notes||null,t.traded_at||new Date().toISOString());
+        _syncPortfolio(uid, finalTicker, t.type.toUpperCase(), t.shares, t.price, meta);
         imported++;
       } catch(e){ importErrors.push(`[${t.ticker}] ${e.message}`); skipped++; }
     }
