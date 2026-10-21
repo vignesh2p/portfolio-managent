@@ -1,8 +1,19 @@
 {
+  "functions": {
+    "api/index.js": { "maxDuration": 120 }
+  },
   "rewrites": [
     {
       "source": "/",
-      "destination": "/portflow.html"
+      "destination": "/onepiece.html"
+    },
+    {
+      "source": "/admin",
+      "destination": "/admin.html"
+    },
+    {
+      "source": "/admin/",
+      "destination": "/admin.html"
     }
   ]
 }

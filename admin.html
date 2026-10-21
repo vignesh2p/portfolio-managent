@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ONEPIECE Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#061018;
+    --bg2:#08131d;
+    --panel:#0d1824;
+    --panel2:#101d2b;
+    --line:rgba(255,255,255,.08);
+    --line2:rgba(0,255,180,.14);
+    --text:#f7fbff;
+    --muted:rgba(255,255,255,.58);
+    --good:#00ffb4;
+    --info:#54c7ff;
+    --bad:#ff6b6b;
+  }
+  *,*::before,*::after{box-sizing:border-box}
+  html,body{margin:0;min-height:100%;background:
+    radial-gradient(circle at top left, rgba(0,255,180,.08), transparent 30%),
+    radial-gradient(circle at 90% 20%, rgba(84,199,255,.08), transparent 25%),
+    linear-gradient(180deg,var(--bg),var(--bg2) 50%,#05090e 100%);
+    color:var(--text);
+    font-family:'DM Mono',monospace;
+  }
+  button,input{font:inherit}
+  .hidden{display:none !important}
+
+  .login-wrap{
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:24px;
+  }
+  .login-card{
+    width:min(560px,100%);
+    border:1px solid var(--line);
+    border-radius:24px;
+    background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.03));
+    box-shadow:0 30px 90px rgba(0,0,0,.35);
+    padding:28px;
+    backdrop-filter:blur(16px);
+  }
+  .eyebrow{
+    font-size:10px;
+    letter-spacing:4px;
+    text-transform:uppercase;
+    color:var(--good);
+    margin-bottom:10px;
+  }
+  .login-title,.page-title{
+    font-family:'Syne',sans-serif;
+    letter-spacing:-.03em;
+  }
+  .login-title{font-size:34px;font-weight:800;margin:0 0 8px}
+  .login-sub{margin:0 0 22px;color:var(--muted);font-size:13px;line-height:1.8}
+  .form-grid{display:grid;gap:14px}
+  .field label{
+    display:block;
+    font-size:10px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    color:rgba(255,255,255,.38);
+    margin-bottom:8px;
+  }
+  .field input{
+    width:100%;
+    padding:14px 16px;
+    border-radius:12px;
+    border:1px solid var(--line);
+    background:rgba(255,255,255,.04);
+    color:#fff;
+    outline:none;
+  }
+  .field input:focus{border-color:var(--line2);box-shadow:0 0 0 3px rgba(0,255,180,.08)}
+  .btn-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
+  .btn{
+    padding:12px 16px;
+    border:0;
+    border-radius:12px;
+    cursor:pointer;
+    font-size:11px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    font-weight:700;
+    text-decoration:none;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .btn-primary{background:linear-gradient(135deg,var(--good),var(--info));color:#000}
+  .btn-secondary{background:rgba(255,255,255,.05);color:#fff;border:1px solid var(--line)}
+  .msg{
+    margin-top:14px;
+    padding:12px 14px;
+    border-radius:12px;
+    font-size:12px;
+    line-height:1.7;
+    display:none;
+  }
+  .msg.ok{display:block;background:rgba(0,255,180,.08);border:1px solid rgba(0,255,180,.18);color:var(--good)}
+  .msg.err{display:block;background:rgba(255,107,107,.08);border:1px solid rgba(255,107,107,.18);color:#ff9494}
+
+  .app-shell{
+    min-height:100vh;
+    display:grid;
+    grid-template-columns:280px minmax(0,1fr);
+  }
+  .sidebar{
+    border-right:1px solid var(--line);
+    background:rgba(255,255,255,.02);
+    padding:22px 18px;
+    backdrop-filter:blur(10px);
+  }
+  .brand{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    margin-bottom:18px;
+  }
+  .brand-title{
+    font-family:'Syne',sans-serif;
+    font-size:20px;
+    font-weight:800;
+    letter-spacing:-.03em;
+  }
+  .brand-sub{
+    font-size:10px;
+    letter-spacing:3px;
+    text-transform:uppercase;
+    color:rgba(255,255,255,.38);
+    margin-top:4px;
+  }
+  .nav-title{
+    font-size:11px;
+    letter-spacing:2px;
+    color:rgba(255,255,255,.4);
+    text-transform:uppercase;
+    margin:22px 0 10px;
+  }
+  .table-nav{display:flex;flex-direction:column;gap:8px}
+  .table-btn{
+    width:100%;
+    text-align:left;
+    border-radius:14px;
+    border:1px solid var(--line);
+    background:rgba(255,255,255,.03);
+    color:#fff;
+    padding:13px 14px;
+    cursor:pointer;
+    transition:.15s ease;
+  }
+  .table-btn:hover{transform:translateY(-1px);border-color:rgba(0,255,180,.18)}
+  .table-btn.active{
+    background:rgba(0,255,180,.10);
+    border-color:rgba(0,255,180,.22);
+  }
+  .table-btn b{display:block;font-size:14px}
+  .table-btn small{display:block;margin-top:4px;color:rgba(255,255,255,.42);font-size:10px;letter-spacing:1px}
+  .sidebar-footer{
+    margin-top:18px;
+    padding-top:18px;
+    border-top:1px solid var(--line);
+    display:grid;
+    gap:10px;
+  }
+  .side-stat{
+    padding:12px 14px;
+    border-radius:14px;
+    background:rgba(255,255,255,.03);
+    border:1px solid var(--line);
+  }
+  .side-stat .label{
+    font-size:10px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    color:rgba(255,255,255,.38);
+    margin-bottom:8px;
+  }
+  .side-stat .value{
+    font-family:'Syne',sans-serif;
+    font-size:18px;
+    font-weight:700;
+  }
+
+  .main{
+    min-width:0;
+    padding:22px;
+  }
+  .topbar{
+    display:flex;
+    align-items:flex-end;
+    justify-content:space-between;
+    gap:16px;
+    flex-wrap:wrap;
+    margin-bottom:18px;
+  }
+  .page-title{font-size:28px;font-weight:800;margin:0}
+  .page-meta{margin-top:6px;font-size:12px;color:var(--muted)}
+  .top-actions{display:flex;gap:10px;flex-wrap:wrap}
+  .banner,.error{
+    border-radius:14px;
+    padding:14px 16px;
+    margin-bottom:14px;
+    display:none;
+    font-size:12px;
+    line-height:1.75;
+  }
+  .banner{background:rgba(0,255,180,.08);border:1px solid rgba(0,255,180,.18);color:var(--good)}
+  .error{background:rgba(255,107,107,.08);border:1px solid rgba(255,107,107,.18);color:#ff9494}
+  .panel{
+    border:1px solid var(--line);
+    border-radius:20px;
+    background:rgba(255,255,255,.03);
+    padding:18px;
+    box-shadow:0 20px 60px rgba(0,0,0,.20);
+  }
+  .shell-info{display:grid;gap:12px}
+  .shell-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:10px;
+    flex-wrap:wrap;
+    margin-bottom:16px;
+  }
+  .chip{
+    display:inline-flex;
+    align-items:center;
+    padding:6px 10px;
+    border-radius:999px;
+    background:rgba(255,255,255,.05);
+    border:1px solid var(--line);
+    font-size:10px;
+    letter-spacing:1px;
+    text-transform:uppercase;
+    color:rgba(255,255,255,.58);
+  }
+  .table-box{
+    overflow:auto;
+    border:1px solid var(--line);
+    border-radius:16px;
+    background:rgba(255,255,255,.02);
+  }
+  table{
+    width:100%;
+    border-collapse:separate;
+    border-spacing:0;
+    min-width:860px;
+  }
+  thead th{
+    position:sticky;
+    top:0;
+    z-index:1;
+    background:rgba(11,20,29,.98);
+    border-bottom:1px solid var(--line);
+    font-size:10px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    color:rgba(255,255,255,.4);
+    text-align:left;
+    padding:12px 12px;
+  }
+  tbody td{
+    border-bottom:1px solid rgba(255,255,255,.05);
+    padding:10px 12px;
+    vertical-align:top;
+    font-size:12px;
+    word-break:break-word;
+    white-space:pre-wrap;
+  }
+  tbody tr:hover{background:rgba(255,255,255,.02)}
+  .muted{color:rgba(255,255,255,.42)}
+  .row-index{
+    width:64px;
+    color:rgba(255,255,255,.45);
+  }
+  .empty-state{
+    padding:26px;
+    text-align:center;
+    color:rgba(255,255,255,.42);
+  }
+  .subtle{
+    color:rgba(255,255,255,.42);
+    font-size:12px;
+    line-height:1.7;
+  }
+  .debug-grid{
+    display:grid;
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    gap:10px;
+  }
+  .debug-stat{
+    padding:12px 14px;
+    border-radius:14px;
+    background:rgba(255,255,255,.03);
+    border:1px solid var(--line);
+    min-width:0;
+  }
+  .debug-stat .label{
+    font-size:10px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    color:rgba(255,255,255,.38);
+    margin-bottom:8px;
+  }
+  .debug-stat .value{
+    font-family:'Syne',sans-serif;
+    font-size:15px;
+    font-weight:700;
+    line-height:1.4;
+    word-break:break-word;
+  }
+
+  @media (max-width: 980px){
+    .app-shell{grid-template-columns:1fr}
+    .sidebar{border-right:none;border-bottom:1px solid var(--line)}
+    table{min-width:760px}
+    .debug-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  }
+  @media (max-width: 720px){
+    .login-title{font-size:28px}
+    .main{padding:16px}
+    .sidebar{padding:18px 14px}
+    .topbar{align-items:flex-start}
+    .page-title{font-size:24px}
+    .debug-grid{grid-template-columns:1fr}
+  }
+</style>
+<link rel="stylesheet" href="/responsive.css">
+<script src="/responsive.js" defer></script>
+</head>
+<body class="admin-console">
+  <div id="login-view" class="login-wrap">
+    <div class="login-card">
+      <div class="eyebrow">ONEPIECE ADMIN</div>
+      <h1 class="login-title">Database Console</h1>
+      <p class="login-sub">Sign in to inspect the live tables. This console is read only, so you can browse data safely without editing or deleting anything from here.</p>
+      <form id="login-form" class="form-grid">
+        <div class="field">
+          <label>Admin Email</label>
+          <input id="admin-email" type="email" autocomplete="username" />
+        </div>
+        <div class="field">
+          <label>Admin Password</label>
+          <input id="admin-password" type="password" autocomplete="off" placeholder="Enter admin password" />
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="login-btn" type="submit">Enter Console</button>
+          <a class="btn btn-secondary" href="/">Back to App</a>
+        </div>
+      </form>
+      <div id="login-msg" class="msg"></div>
+      <p class="subtle" style="margin-top:16px">If you want to reset the browser session, use <a href="/logout" style="color:var(--good);text-decoration:none">/logout</a>.</p>
+    </div>
+  </div>
+
+  <div id="admin-view" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="brand">
+        <div>
+          <div class="brand-title">ONEPIECE</div>
+          <div class="brand-sub">Admin Browser</div>
+        </div>
+        <span class="chip">Live</span>
+      </div>
+
+      <div class="nav-title">Tables</div>
+      <div id="table-nav" class="table-nav"></div>
+
+      <div class="sidebar-footer">
+        <div class="side-stat">
+          <div class="label">Signed In As</div>
+          <div class="value" id="admin-user-name">-</div>
+        </div>
+        <div class="side-stat">
+          <div class="label">Current Table</div>
+          <div class="value" id="current-table-name">-</div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div>
+          <h2 class="page-title" id="table-title">Select a table</h2>
+          <div class="page-meta" id="table-meta">Choose a table from the left to inspect rows.</div>
+        </div>
+        <div class="top-actions">
+          <button class="btn btn-secondary" id="refresh-btn" type="button">Refresh</button>
+          <button class="btn btn-secondary" id="logout-btn" type="button">Sign Out</button>
+        </div>
+      </div>
+
+      <div id="admin-banner" class="banner"></div>
+      <div id="admin-error" class="error"></div>
+      <div id="db-debug" class="panel" style="margin-bottom:14px"></div>
+
+      <div id="content" class="panel">
+        <div class="shell-info">
+          <div class="shell-head">
+            <div>
+              <div class="eyebrow" style="margin-bottom:8px">Ready</div>
+              <div style="font-family:'Syne',sans-serif;font-size:22px;font-weight:800;letter-spacing:-.03em">Pick a table from the left</div>
+            </div>
+            <span class="chip">Read only</span>
+          </div>
+          <div class="subtle">
+            The left panel is fixed and always visible. Select any table to load it into the right panel and inspect the rows in a read-only grid.
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+<script>
+const BASE = window.location.origin;
+const STORAGE_TOKEN = 'pf_admin_token';
+const STORAGE_USER = 'pf_admin_user';
+const TABLES = ['users', 'portfolio', 'watchlist', 'sip_config', 'trade_history'];
+
+let adminToken = localStorage.getItem(STORAGE_TOKEN) || '';
+let adminUser = safeJson(localStorage.getItem(STORAGE_USER));
+let dbDebug = null;
+let tableCounts = {};
+let currentTable = 'users';
+let currentSchema = [];
+let currentRows = [];
+let booted = false;
+
+const loginView = document.getElementById('login-view');
+const adminView = document.getElementById('admin-view');
+const loginMsg = document.getElementById('login-msg');
+const adminBanner = document.getElementById('admin-banner');
+const adminError = document.getElementById('admin-error');
+const dbDebugPanel = document.getElementById('db-debug');
+const tableNav = document.getElementById('table-nav');
+const content = document.getElementById('content');
+const SYNE_STYLE_LG = "font-family:'Syne',sans-serif;font-size:22px;font-weight:800;letter-spacing:-.03em";
+const SYNE_STYLE_MD = "font-family:'Syne',sans-serif;font-size:18px;font-weight:800;letter-spacing:-.03em";
+
+document.getElementById('login-form').addEventListener('submit', doLogin);
+document.getElementById('logout-btn').addEventListener('click', function () { window.location.href = '/logout'; });
+document.getElementById('refresh-btn').addEventListener('click', function () { refreshCurrentTable(); });
+
+window.addEventListener('error', function (event) {
+  if (adminView && !adminView.classList.contains('hidden')) {
+    setError('Client error: ' + (event.message || 'Unexpected error'));
+  }
+});
+window.addEventListener('unhandledrejection', function (event) {
+  if (adminView && !adminView.classList.contains('hidden')) {
+    var reason = event.reason && (event.reason.message || event.reason.error || String(event.reason));
+    setError('Request error: ' + (reason || 'Unexpected failure'));
+  }
+});
+
+function safeJson(raw) {
+  try { return raw ? JSON.parse(raw) : null; } catch { return null; }
+}
+
+function escapeHtml(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function setMessage(el, message, kind) {
+  if (kind === void 0) kind = 'ok';
+  if (!el) return;
+  el.className = 'msg ' + (message ? kind : '');
+  el.textContent = message || '';
+  el.style.display = message ? 'block' : 'none';
+}
+
+function setBanner(message, ok) {
+  if (ok === void 0) ok = true;
+  adminBanner.className = ok ? 'banner' : 'error';
+  adminBanner.textContent = message || '';
+  adminBanner.style.display = message ? 'block' : 'none';
+}
+
+function setError(message) {
+  adminError.textContent = message || '';
+  adminError.style.display = message ? 'block' : 'none';
+}
+
+function renderDbDebugPanel() {
+  if (!dbDebugPanel) return;
+  if (!dbDebug) {
+    dbDebugPanel.innerHTML = '<div class="shell-info"><div class="shell-head"><div><div class="eyebrow" style="margin-bottom:8px">Database</div><div style="' + SYNE_STYLE_LG + '">Loading live database snapshot...</div></div><span class="chip">Inspecting</span></div><div class="subtle">Fetching the live Turso host and table counts for this admin session.</div></div>';
+    return;
+  }
+
+  var db = dbDebug.database || {};
+  var counts = dbDebug.counts || {};
+  var totalRows = Object.keys(counts).reduce(function (sum, key) { return sum + Number(counts[key] || 0); }, 0);
+  var countCards = TABLES.map(function (table) {
+    return '<div class="debug-stat"><div class="label">' + escapeHtml(table) + '</div><div class="value">' + escapeHtml(String(counts[table] ?? 0)) + ' rows</div></div>';
+  }).join('');
+
+  dbDebugPanel.innerHTML = '<div class="shell-info">' +
+    '<div class="shell-head">' +
+      '<div>' +
+        '<div class="eyebrow" style="margin-bottom:8px">Database</div>' +
+        '<div style="' + SYNE_STYLE_LG + '">Live Turso snapshot</div>' +
+      '</div>' +
+      '<span class="chip">' + escapeHtml(db.host || 'unknown host') + '</span>' +
+    '</div>' +
+    '<div class="debug-grid">' +
+      '<div class="debug-stat"><div class="label">Host</div><div class="value">' + escapeHtml(db.host || '-') + '</div></div>' +
+      '<div class="debug-stat"><div class="label">Database</div><div class="value">' + escapeHtml(db.database || db.pathname || '-') + '</div></div>' +
+      '<div class="debug-stat"><div class="label">Auth Token</div><div class="value">' + (dbDebug.has_auth_token ? 'Present' : 'Missing') + '</div></div>' +
+      '<div class="debug-stat"><div class="label">Rows Total</div><div class="value">' + escapeHtml(String(totalRows)) + '</div></div>' +
+    '</div>' +
+    '<div class="subtle" style="margin-top:12px">Snapshot time: ' + escapeHtml(dbDebug.timestamp || '-') + '</div>' +
+    '<div class="nav-title" style="margin-top:14px">Table Counts</div>' +
+    '<div class="debug-grid">' + countCards + '</div>' +
+  '</div>';
+}
+
+function clearSession(message) {
+  adminToken = '';
+  adminUser = null;
+  localStorage.removeItem(STORAGE_TOKEN);
+  localStorage.removeItem(STORAGE_USER);
+  setMessage(loginMsg, message || '', message ? 'err' : 'ok');
+  showLogin();
+}
+
+function showLogin() {
+  loginView.classList.remove('hidden');
+  adminView.classList.add('hidden');
+  adminBanner.style.display = 'none';
+  adminError.style.display = 'none';
+  document.body.style.overflow = 'auto';
+}
+
+function showAdmin() {
+  loginView.classList.add('hidden');
+  adminView.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  history.replaceState(null, '', '/admin');
+  document.getElementById('admin-user-name').textContent = adminUser && (adminUser.name || adminUser.email) || 'Admin';
+  document.getElementById('current-table-name').textContent = currentTable;
+}
+
+async function fetchJson(path, options) {
+  if (options === void 0) options = {};
+  var headers = { 'Content-Type': 'application/json' };
+  if (adminToken) headers.Authorization = 'Bearer ' + adminToken;
+  var response = await fetch(BASE + path, Object.assign({ headers: headers }, options));
+  var text = await response.text();
+  var data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = { success: false, error: 'Invalid server response' }; }
+  if (response.status === 401 || response.status === 403) {
+    clearSession(data && data.error || 'Session expired. Please sign in again.');
+    throw new Error(data && data.error || 'Unauthorized');
+  }
+  return data || {};
+}
+
+async function doLogin(event) {
+  event.preventDefault();
+  var email = document.getElementById('admin-email').value.trim();
+  var password = document.getElementById('admin-password').value;
+  if (!email || !password) {
+    setMessage(loginMsg, 'Email and password are required.', 'err');
+    return;
+  }
+  var btn = document.getElementById('login-btn');
+  btn.disabled = true;
+  btn.textContent = 'Signing in...';
+  setMessage(loginMsg, '', 'ok');
+  try {
+    var result = await fetchJson('/api/auth/admin-login', {
+      method: 'POST',
+      body: JSON.stringify({ email: email, password: password })
+    });
+    if (!result.success) throw new Error(result.error || 'Login failed');
+    adminToken = result.token;
+    adminUser = result.user;
+    localStorage.setItem(STORAGE_TOKEN, result.token);
+    localStorage.setItem(STORAGE_USER, JSON.stringify(result.user));
+    setMessage(loginMsg, 'Signed in successfully. Opening admin browser...', 'ok');
+    booted = true;
+    showAdmin();
+    await bootstrapAdmin();
+  } catch (err) {
+    setMessage(loginMsg, err.message || 'Login failed', 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Enter Console';
+  }
+}
+
+function renderNav() {
+  tableNav.innerHTML = TABLES.map(function (table) {
+    var active = table === currentTable ? 'active' : '';
+    var count = tableCounts[table];
+    var label = count === void 0 ? 'Open table' : count + ' rows';
+    return '<button class="table-btn ' + active + '" data-table="' + table + '" type="button">' +
+      '<b>' + escapeHtml(table) + '</b>' +
+      '<small>' + escapeHtml(label) + '</small>' +
+      '</button>';
+  }).join('');
+  tableNav.querySelectorAll('[data-table]').forEach(function (btn) {
+    btn.addEventListener('click', function () { loadTable(btn.getAttribute('data-table')); });
+  });
+  document.getElementById('current-table-name').textContent = currentTable;
+}
+
+function renderDefaultCard() {
+  content.innerHTML = '<div class="shell-info">' +
+    '<div class="shell-head">' +
+      '<div>' +
+        '<div class="eyebrow" style="margin-bottom:8px">Ready</div>' +
+        '<div style="' + SYNE_STYLE_LG + '">Pick a table from the left</div>' +
+      '</div>' +
+      '<span class="chip">Read only</span>' +
+    '</div>' +
+    '<div class="subtle">The left panel is fixed and always visible. Select any table to load it into the right panel and inspect the rows in a read-only grid.</div>' +
+  '</div>';
+}
+
+function formatCell(value) {
+  if (value === null || value === undefined || value === '') return '<span class="muted">-</span>';
+  return escapeHtml(value);
+}
+
+function renderTableView() {
+  document.getElementById('table-title').textContent = currentTable;
+  document.getElementById('table-meta').textContent = currentRows.length + ' rows - ' + currentSchema.length + ' columns - read only';
+  document.getElementById('current-table-name').textContent = currentTable;
+
+  var visibleCols = currentSchema.filter(function (col) {
+    return !(currentTable === 'users' && col.name === 'password');
+  });
+
+  if (!currentRows.length) {
+    content.innerHTML = '<div class="empty-state">No rows found in this table yet.</div>';
+    return;
+  }
+
+  var headerHtml = visibleCols.map(function (col) {
+    return '<th>' + escapeHtml(col.name.replace(/_/g, ' ')) + '</th>';
+  }).join('');
+
+  var rowsHtml = currentRows.map(function (row, index) {
+    var cellsHtml = visibleCols.map(function (col) {
+      return '<td>' + formatCell(row[col.name]) + '</td>';
+    }).join('');
+    return '<tr><td class="row-index">' + escapeHtml(String(index + 1)) + '</td>' + cellsHtml + '</tr>';
+  }).join('');
+
+  content.innerHTML = '<div class="shell-info">' +
+    '<div class="shell-head">' +
+      '<div>' +
+        '<div class="eyebrow" style="margin-bottom:8px">Table view</div>' +
+        '<div style="' + SYNE_STYLE_LG + '">' + escapeHtml(currentTable) + '</div>' +
+      '</div>' +
+      '<span class="chip">' + currentRows.length + ' rows</span>' +
+    '</div>' +
+    '<div class="table-box">' +
+      '<table>' +
+        '<thead><tr><th>#</th>' + headerHtml + '</tr></thead>' +
+        '<tbody>' + rowsHtml + '</tbody>' +
+      '</table>' +
+    '</div>' +
+  '</div>';
+}
+
+async function loadCounts() {
+  var result = await fetchJson('/api/admin/tables');
+  if (!result.success) throw new Error(result.error || 'Unable to load table counts');
+  tableCounts = {};
+  (result.tables || []).forEach(function (item) { tableCounts[item.name] = item.count; });
+  renderNav();
+}
+
+async function loadDbDebug() {
+  var result = await fetchJson('/api/admin/debug/db');
+  if (!result.success) throw new Error(result.error || 'Unable to load database snapshot');
+  dbDebug = result;
+  tableCounts = result.counts || {};
+  renderNav();
+  renderDbDebugPanel();
+}
+
+async function loadTable(table) {
+  currentTable = table;
+  setError('');
+  setBanner('Loading ' + table + '...', true);
+  renderNav();
+  content.innerHTML = '<div class="panel"><div class="shell-head"><div><div style="' + SYNE_STYLE_MD + '">Loading ' + escapeHtml(table) + '</div><div class="subtle">Fetching schema and rows from the backend...</div></div><span class="chip">Loading</span></div><div class="empty-state">Please wait while the table loads.</div></div>';
+  try {
+    var result = await fetchJson('/api/admin/table/' + table);
+    if (!result.success) throw new Error(result.error || 'Unable to load table');
+    currentSchema = result.columns || [];
+    currentRows = result.rows || [];
+    setBanner(table + ' loaded.', true);
+    setError('');
+    renderTableView();
+    if (!currentRows.length) {
+      setBanner('"' + table + '" is empty. This view is read only.', true);
+    }
+  } catch (err) {
+    setError(err.message || 'Unable to load table');
+    content.innerHTML = '<div class="panel"><div class="shell-head"><div><div style="' + SYNE_STYLE_MD + '">Unable to load ' + escapeHtml(table) + '</div><div class="subtle">The backend returned an error. Try Refresh or select a different table.</div></div><span class="chip">Error</span></div><div class="empty-state">' + escapeHtml(err.message || 'Unknown error') + '</div></div>';
+  }
+}
+
+async function refreshCurrentTable() {
+  if (!adminToken) return showLogin();
+  await loadDbDebug();
+  await loadTable(currentTable);
+}
+
+async function bootstrapAdmin() {
+  if (!booted) {
+    tableNav.innerHTML = TABLES.map(function (table) {
+      return '<button class="table-btn ' + (table === currentTable ? 'active' : '') + '" data-table="' + table + '" type="button"><b>' + escapeHtml(table) + '</b><small>Open table</small></button>';
+    }).join('');
+    renderNav();
+    tableNav.querySelectorAll('[data-table]').forEach(function (btn) {
+      btn.addEventListener('click', function () { loadTable(btn.getAttribute('data-table')); });
+    });
+    booted = true;
+  }
+
+  if (adminToken) {
+    showAdmin();
+    try {
+      var me = await fetchJson('/api/auth/admin-me');
+      if (!me.success) throw new Error(me.error || 'Session invalid');
+      adminUser = me.user || adminUser;
+      localStorage.setItem(STORAGE_USER, JSON.stringify(adminUser));
+      document.getElementById('admin-user-name').textContent = (adminUser && (adminUser.name || adminUser.email)) || 'Admin';
+      renderDefaultCard();
+      dbDebug = null;
+      renderDbDebugPanel();
+      await loadDbDebug();
+      await loadTable(currentTable);
+    } catch (err) {
+      clearSession(err.message || 'Session expired. Please sign in again.');
+    }
+  } else {
+    showLogin();
+  }
+}
+
+window.addEventListener('hashchange', function () {
+  if (location.hash === '#logout') window.location.href = '/logout';
+});
+
+bootstrapAdmin();
+</script>
+</body>
+</html>

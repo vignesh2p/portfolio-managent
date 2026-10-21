@@ -1,0 +1,7 @@
+.env*
+*.env.example
+.vercel.backup/
+tests/
+test-artifacts/
+*.inspect.ndjson
+STOCK-QUOTE-API.md

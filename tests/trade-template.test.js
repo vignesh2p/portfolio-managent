@@ -1,0 +1,36 @@
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const vm=require('node:vm');
+const XLSX=require('xlsx');
+const root=path.join(__dirname,'..');
+const source=fs.readFileSync(path.join(root,'server.js'),'utf8');
+test('download template parses through the real importer without errors or duplicate buys',()=>{
+  const start=source.indexOf('function parseExcelTrades(');
+  const context=vm.createContext({XLSX});
+  vm.runInContext(source.slice(start,source.indexOf('// ─',start)),context);
+  const result=context.parseExcelTrades(fs.readFileSync(path.join(root,'templates/onepiece-trade-import-template.xlsx')),'template.xlsx');
+  assert.equal(result.errors.length,0,JSON.stringify(result.errors));
+  assert.equal(result.trades.length,3);
+  assert.equal(result.trades[0].type,'BUY');
+  assert.equal(result.trades[0].shares,10);
+  assert.equal(result.trades[0].price,2500);
+  assert.equal(result.trades[1].price,0);
+  assert.equal(result.trades[1].shares,5);
+  assert.equal(result.trades[2].type,'SELL');
+  assert.equal(result.trades[2].shares,5);
+  assert.equal(result.trades[2].price,2600);
+  assert.equal(result.trades[0].traded_at.slice(0,10),'2026-01-05');
+  assert.equal(result.trades[1].traded_at.slice(0,10),'2026-02-10');
+  assert.equal(result.trades[2].traded_at.slice(0,10),'2026-03-15');
+});
+test('template download handler returns an Excel attachment',()=>{
+  let handler,buffer;
+  const headers={};
+  vm.runInNewContext(source.slice(source.indexOf('app.get("/api/trades/template"'),source.indexOf('app.get("/api/trades/export"')),{app:{get:(_p,fn)=>handler=fn},fs,path,__dirname:root});
+  const res={set(k,v){headers[k]=v;return this;},type(v){headers.type=v;return this;},send(v){buffer=v;}};
+  handler({},res);
+  assert.match(headers['Content-Disposition'],/attachment; filename="onepiece-trade-import-template.xlsx"/);
+  assert.equal(XLSX.read(buffer).SheetNames[0],'Trades');
+});

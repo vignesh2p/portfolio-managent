@@ -1,15 +1,16 @@
 {
-  "name": "portflow",
+  "name": "onepiece",
   "version": "1.0.0",
   "private": true,
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "migrate:turso": "node scripts/migrate-to-turso.js"
   },
   "dependencies": {
     "axios": "^1.9.0",
     "bcryptjs": "^3.0.2",
-    "better-sqlite3": "^11.10.0",
+    "@libsql/client": "^0.15.15",
     "cors": "^2.8.5",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
