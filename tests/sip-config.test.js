@@ -43,3 +43,11 @@ test('browser validator can be served directly from the bundled function',()=>{
   const invalid=valid();invalid.levels[0].allocation=1;
   assert.throws(()=>context.validateSIPConfig(invalid),/100%/);
 });
+test('accepts one, three, and more than seven custom levels while preserving order and total validation',()=>{
+ for(const count of [1,3,9,15]){
+   const config={max_budget:1000,levels:Array.from({length:count},(_,i)=>({fall:-(i+1)*5,allocation:100/count}))};
+   assert.equal(validateSIPConfig(config).levels.length,count);
+ }
+ const unordered={max_budget:1000,levels:[{fall:-20,allocation:50},{fall:-10,allocation:50}]};
+ assert.throws(()=>validateSIPConfig(unordered),/order/);
+});

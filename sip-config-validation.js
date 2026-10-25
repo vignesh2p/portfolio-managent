@@ -4,7 +4,7 @@
       throw new Error('Enter a budget greater than zero.');
     }
     const levels = config.levels;
-    if (!Array.isArray(levels) || levels.length !== 7) throw new Error('Configure all seven SIP levels.');
+    if (!Array.isArray(levels) || levels.length < 1) throw new Error('Configure at least one SIP level.');
     let previous = 0, total = 0;
     for (const level of levels) {
       if (!level || typeof level.fall !== 'number' || !Number.isFinite(level.fall) || level.fall <= -100 || level.fall >= previous) {

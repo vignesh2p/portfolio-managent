@@ -8,13 +8,17 @@
     "migrate:turso": "node scripts/migrate-to-turso.js"
   },
   "dependencies": {
+    "@libsql/client": "^0.15.15",
     "axios": "^1.9.0",
     "bcryptjs": "^3.0.2",
-    "@libsql/client": "^0.15.15",
     "cors": "^2.8.5",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "yahoo-finance2": "4.0.5"
+  },
+  "engines": {
+    "node": "22.x"
   }
 }

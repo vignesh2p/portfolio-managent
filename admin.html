@@ -332,9 +332,10 @@
     .page-title{font-size:24px}
     .debug-grid{grid-template-columns:1fr}
   }
-</style>
+.universe-input{font-size:16px;min-height:48px;min-width:160px;max-width:100%;padding:10px;background:#141c2f;color:#fff;border:1px solid #65718a;border-radius:8px}#universe-search{display:block;width:100%;margin:10px 0}#universe-message{margin:12px 0}#universe-rows tr[hidden]{display:none}</style>
 <link rel="stylesheet" href="/responsive.css">
 <script src="/responsive.js" defer></script>
+<script src="/admin-activity.js" defer></script>
 </head>
 <body class="admin-console">
   <div id="login-view" class="login-wrap">
@@ -429,7 +430,7 @@ let adminToken = localStorage.getItem(STORAGE_TOKEN) || '';
 let adminUser = safeJson(localStorage.getItem(STORAGE_USER));
 let dbDebug = null;
 let tableCounts = {};
-let currentTable = 'users';
+let currentTable = 'User management';
 let currentSchema = [];
 let currentRows = [];
 let booted = false;
@@ -604,7 +605,7 @@ async function doLogin(event) {
 }
 
 function renderNav() {
-  tableNav.innerHTML = TABLES.map(function (table) {
+  tableNav.innerHTML = ['User management','User activity','Stocks Config','Leader board',...TABLES.filter(t=>t!=='users')].map(function (table) {
     var active = table === currentTable ? 'active' : '';
     var count = tableCounts[table];
     var label = count === void 0 ? 'Open table' : count + ' rows';
@@ -696,6 +697,151 @@ async function loadDbDebug() {
   renderDbDebugPanel();
 }
 
+async function loadUserManagement(){
+  document.getElementById('table-title').textContent='User management';
+  document.getElementById('table-meta').textContent='Approve new signups, block access, or soft-delete accounts. Deleted accounts and their data are retained.';
+  const response=await fetchJson('/api/admin/users');if(!response.success)throw new Error(response.error||'Unable to load users');
+  content.innerHTML='<label for="user-search">Search users</label><input id="user-search" class="universe-input" type="search"><p id="user-action-message" role="status" aria-live="polite"></p><div style="overflow:auto"><table><thead><tr><th>Name</th><th>Email</th><th>Status</th><th>Signed up</th><th>Actions</th></tr></thead><tbody id="user-rows"></tbody></table></div>';
+  const body=document.getElementById('user-rows');
+  for(const user of response.data){
+    const row=document.createElement('tr');row.dataset.search=(user.name+' '+user.email+' '+user.account_status).toLowerCase();
+    for(const value of [user.name||'—',user.email,user.account_status,user.created_at||'—']){const cell=document.createElement('td');cell.textContent=value;row.append(cell);}
+    const actions=document.createElement('td');row.append(actions);body.append(row);
+    if(user.account_status==='deleted'){actions.textContent='Soft deleted';continue;}
+    for(const [action,label] of [['approve',user.account_status==='blocked'?'Unblock / Approve':'Approve'],['block','Block'],['delete','Soft delete']]){
+      if(action==='approve'&&user.account_status==='approved'||action==='block'&&user.account_status==='blocked')continue;
+      const button=document.createElement('button');button.type='button';button.className='btn btn-secondary';button.textContent=label;actions.append(button);
+      button.addEventListener('click',async()=>{
+        if(action==='delete'&&!confirm('Soft-delete '+user.email+'? Access will be removed; their data will be retained.'))return;
+        actions.querySelectorAll('button').forEach(b=>b.disabled=true);
+        try{const result=await fetchJson('/api/admin/users/'+user.id+'/access',{method:'PUT',body:JSON.stringify({action})});if(!result.success)throw new Error(result.error);await loadUserManagement();document.getElementById('user-action-message').textContent='User access updated.';}
+        catch(e){document.getElementById('user-action-message').textContent=e.message;actions.querySelectorAll('button').forEach(b=>b.disabled=false);}
+      });
+    }
+  }
+  document.getElementById('user-search').addEventListener('input',event=>{const q=event.target.value.toLowerCase();body.querySelectorAll('tr').forEach(row=>row.hidden=!row.dataset.search.includes(q));});
+  setBanner(response.data.length+' users loaded.',true);
+}
+let universeStocks=[];
+function setupAdminStockSearch(form){
+ const search=form.querySelector('#admin-stock-search'),list=form.querySelector('#admin-stock-suggestions'),status=form.querySelector('#admin-stock-search-status');
+ let version=0,timer,index=-1;
+ function close(){clearTimeout(timer);version++;index=-1;list.replaceChildren();search.setAttribute('aria-expanded','false');search.removeAttribute('aria-activedescendant');}
+ search.addEventListener('input',()=>{
+  close();const q=search.value.trim(),current=version;
+  if(q.length<2){status.textContent='Type at least 2 characters.';return;}
+  status.textContent='Searching Yahoo…';
+  timer=setTimeout(async()=>{
+   if(!form.isConnected)return;
+   try{
+    const result=await fetchJson('/api/admin/stocks/search?q='+encodeURIComponent(q));if(current!==version||!form.isConnected)return;
+    if(!result.success)throw new Error(result.error||'Search unavailable');
+    status.textContent=result.data.length?'Select a stock to fill the editable codes.':'No stocks found. Try an exact symbol ending .NS or .BO.';
+    result.data.forEach((stock,i)=>{
+     const option=document.createElement('div');option.id='admin-stock-option-'+i;option.className='stock-suggestion';option.setAttribute('role','option');option.setAttribute('aria-selected','false');option.textContent=stock.name+' | '+stock.exchange+' | '+stock.symbol;
+     option.addEventListener('mousedown',event=>event.preventDefault());
+     option.addEventListener('click',()=>{
+      const existing=universeStocks.find(row=>row.yahoo_finance_code===stock.symbol);
+      form.elements.code.value=existing?.code||stock.symbol.slice(0,-3);
+      form.elements.stock_code.value=existing?.stock_code||(stock.symbol.endsWith('.NS')?'NSE:':'BSE:')+stock.symbol.slice(0,-3);
+      form.elements.yahoo_finance_code.value=stock.symbol;search.value=stock.name+' | '+stock.symbol;close();
+      status.textContent='Review CODE and Stock Code, then click Add to Default watchlist.';form.elements.code.focus();
+     });list.append(option);
+    });search.setAttribute('aria-expanded',String(result.data.length>0));
+   }catch(error){if(current===version&&form.isConnected)status.textContent=error.message;}
+  },350);
+ });
+ search.addEventListener('keydown',event=>{
+  if(event.isComposing)return;
+  const options=[...list.children];
+  if(event.key==='Escape'||event.key==='Tab'){close();return;}
+  if(event.key==='Enter'){event.preventDefault();if(options.length)options[Math.max(index,0)].click();return;}
+  if(!options.length||!['ArrowDown','ArrowUp'].includes(event.key))return;
+  event.preventDefault();index=(index+(event.key==='ArrowDown'?1:-1)+options.length)%options.length;
+  options.forEach((option,i)=>option.setAttribute('aria-selected',String(i===index)));search.setAttribute('aria-activedescendant',options[index].id);options[index].scrollIntoView({block:'nearest'});
+ });
+}
+async function loadUniverseStockConfig(){
+  document.getElementById('table-title').textContent='Stocks Config';
+  document.getElementById('table-meta').textContent='Manage CODE, Stock Code and Yahoo Finance Code for the full stock universe. Add stocks to fetch their details from Yahoo Finance. New stocks join the Default watchlist. Use the Default watchlist checkbox to manage inclusion for all users.';
+  const result=await fetchJson('/api/admin/stock-config');
+  if(!result.success)throw new Error(result.error||'Unable to load the stock universe');
+  universeStocks=result.data;
+  content.innerHTML='<label for="universe-search">Search by stock name, CODE, Stock Code or Yahoo Finance Code</label><input id="universe-search" type="search" class="universe-input"><button id="universe-export" class="btn btn-secondary" type="button">Export Stocks CSV</button><div id="universe-message" role="status" aria-live="polite"></div><div style="overflow-x:auto"><table><thead><tr><th>Stock name</th><th>CODE</th><th>Stock Code</th><th>Yahoo Finance Code</th><th>Default watchlist</th><th>Action</th></tr></thead><tbody id="universe-rows"></tbody></table></div>';
+  const addForm=document.createElement('form');addForm.id='universe-add';addForm.method='post';
+  addForm.innerHTML='<fieldset><legend>Add stock to Default watchlist</legend><label for="admin-stock-search">Search Indian stocks on Yahoo</label><input id="admin-stock-search" name="search" type="search" class="universe-input" maxlength="80" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="admin-stock-suggestions"><div id="admin-stock-suggestions" role="listbox" aria-label="Indian stocks"></div><p id="admin-stock-search-status" role="status" aria-live="polite">Type a company name or Yahoo symbol, then review the codes before adding.</p><label for="add-code">CODE</label><input id="add-code" name="code" class="universe-input" required maxlength="100"><label for="add-stock-code">Stock Code</label><input id="add-stock-code" name="stock_code" class="universe-input" required maxlength="54"><label for="add-yahoo-code">Yahoo Finance Code</label><input id="add-yahoo-code" name="yahoo_finance_code" class="universe-input" required maxlength="54" placeholder="RELIANCE.NS or GRWRHITECH.BO"><button type="submit" class="btn btn-primary">Add to Default watchlist</button></fieldset>';
+  addForm.querySelectorAll('input').forEach(input=>{input.autocomplete='off';input.spellcheck=false;input.setAttribute('autocorrect','off');input.setAttribute('autocapitalize','off');});
+  content.prepend(addForm);
+  setupAdminStockSearch(addForm);
+  addForm.addEventListener('submit',async event=>{
+    event.preventDefault();const button=addForm.querySelector('button'),message=document.getElementById('universe-message');button.disabled=true;message.textContent='Fetching stock details from Yahoo Finance…';
+    try{const fields=Object.fromEntries(new FormData(addForm));
+    const existing=universeStocks.find(stock=>stock.yahoo_finance_code===fields.yahoo_finance_code.trim().toUpperCase());
+    let result;
+    if(existing){
+      result=await fetchJson('/api/admin/stock-config/'+encodeURIComponent(existing.ticker),{method:'PUT',body:JSON.stringify({...fields,expected_code:existing.code,expected_stock_code:existing.stock_code,expected_yahoo_finance_code:existing.yahoo_finance_code})});
+      if(!result.success)throw new Error(result.error||'Unable to save stock codes');
+      const included=await fetchJson('/api/admin/default-watchlist/'+encodeURIComponent(existing.ticker),{method:'PUT',body:JSON.stringify({included:true})});
+      if(!included.success)throw new Error(included.error||'Codes saved; unable to add to Default watchlist. Please retry.');
+    }else result=await fetchJson('/api/admin/stock-config',{method:'POST',body:JSON.stringify(fields)});
+    if(!result.success)throw new Error(result.error||'Unable to add stock');await loadUniverseStockConfig();document.getElementById('universe-message').textContent='Stock added to Default watchlist.'+(result.data.quote_error?' '+result.data.quote_error:'');}
+    catch(error){message.textContent=error.message;}finally{button.disabled=false;}
+  });
+  const body=document.getElementById('universe-rows');
+  universeStocks.forEach((stock,index)=>{
+    const row=document.createElement('tr');row.dataset.index=index;
+    const name=document.createElement('td');name.textContent=stock.name||stock.ticker;row.append(name);
+    for(const field of ['code','stock_code','yahoo_finance_code']){
+      const cell=document.createElement('td'),input=document.createElement('input');
+      input.id='universe-'+field+'-'+index;input.name=field;input.className='universe-input';input.value=stock[field]||'';input.maxLength=field==='code'?100:54;
+      input.setAttribute('aria-label',(field==='code'?'CODE':field==='stock_code'?'Stock Code':'Yahoo Finance Code')+' for '+(stock.name||stock.ticker));
+      input.setAttribute('autocorrect','off');input.setAttribute('autocapitalize','off');input.spellcheck=false;input.autocomplete='off';cell.append(input);row.append(cell);
+    }
+    const membership=document.createElement('td'),toggle=document.createElement('input');toggle.type='checkbox';toggle.checked=Number(stock.in_default_watchlist)!==0;toggle.setAttribute('aria-label','Include '+(stock.name||stock.ticker)+' in Default watchlist');membership.append(toggle);row.append(membership);
+    toggle.addEventListener('change',async()=>{
+      const included=toggle.checked;toggle.disabled=true;
+      try{const result=await fetchJson('/api/admin/default-watchlist/'+encodeURIComponent(stock.ticker),{method:'PUT',body:JSON.stringify({included})});if(!result.success)throw new Error(result.error||'Unable to update Default watchlist');stock.in_default_watchlist=included?1:0;document.getElementById('universe-message').textContent=included?'Added to Default watchlist for all users.':'Removed from Default watchlist for all users.';}
+      catch(error){toggle.checked=!included;document.getElementById('universe-message').textContent=error.message;}finally{toggle.disabled=false;}
+    });
+    const action=document.createElement('td'),form=document.createElement('form'),button=document.createElement('button');
+    form.id='universe-form-'+index;form.method='post';button.className='btn btn-primary';button.type='submit';button.textContent='Save';form.append(button);action.append(form);row.append(action);body.append(row);
+    row.querySelectorAll('input').forEach(input=>input.setAttribute('form',form.id));
+    form.addEventListener('submit',event=>{event.preventDefault();saveUniverseStock(index,button);});
+    const remove=document.createElement('button');remove.type='button';remove.className='btn btn-secondary';remove.textContent='Delete';remove.setAttribute('aria-label','Delete '+(stock.name||stock.ticker));action.append(remove);
+    remove.addEventListener('click',async()=>{
+      if(!confirm('Delete '+(stock.name||stock.ticker)+' from the stock universe and watchlists? Existing trades and portfolio holdings will be kept.'))return;
+      remove.disabled=true;
+      try{const result=await fetchJson('/api/admin/stock-config/'+encodeURIComponent(stock.ticker),{method:'DELETE'});if(!result.success)throw new Error(result.error||'Unable to delete stock');await loadUniverseStockConfig();document.getElementById('universe-message').textContent='Stock deleted.';}
+      catch(error){document.getElementById('universe-message').textContent=error.message;remove.disabled=false;}
+    });
+  });
+  document.getElementById('universe-search').addEventListener('input',event=>{
+    const q=event.target.value.trim().toLowerCase();
+    body.querySelectorAll('tr').forEach(row=>{const stock=universeStocks[Number(row.dataset.index)];row.hidden=![stock.name,stock.ticker,stock.code,stock.stock_code,stock.yahoo_finance_code].join(' ').toLowerCase().includes(q);});
+  });
+  document.getElementById('universe-export').addEventListener('click',exportUniverseStocks);
+  setBanner(universeStocks.length+' universe stocks loaded.',true);
+}
+async function saveUniverseStock(index,button){
+  const stock=universeStocks[index],message=document.getElementById('universe-message');
+  const code=document.getElementById('universe-code-'+index).value.trim(),stock_code=document.getElementById('universe-stock_code-'+index).value.trim().toUpperCase();
+  const yahoo_finance_code=document.getElementById('universe-yahoo_finance_code-'+index).value.trim().toUpperCase();
+  button.disabled=true;message.textContent='Saving…';
+  try{
+    const response=await fetchJson('/api/admin/stock-config/'+encodeURIComponent(stock.ticker),{method:'PUT',body:JSON.stringify({code,stock_code,yahoo_finance_code,expected_yahoo_finance_code:stock.yahoo_finance_code,expected_code:stock.code,expected_stock_code:stock.stock_code})});
+    if(!response.success)throw new Error(response.error||'Save failed');
+    universeStocks[index]={...stock,...response.data};message.textContent='Saved '+(stock.name||stock.ticker)+'.';
+    document.getElementById('universe-stock_code-'+index).value=response.data.stock_code;
+    document.getElementById('universe-code-'+index).value=response.data.code;
+    document.getElementById('universe-yahoo_finance_code-'+index).value=response.data.yahoo_finance_code;
+  }catch(error){message.textContent=error.message;}finally{button.disabled=false;}
+}
+function exportUniverseStocks(){
+  const rows=[['Stock Code','Stock Name','CODE','Yahoo Finance Code'],...universeStocks.map(s=>[s.stock_code,s.name,s.code,s.yahoo_finance_code])];
+  const csv=rows.map(row=>row.map(value=>{let text=String(value??'');if(/^\s*[=+@-]/.test(text))text="'"+text;return '"'+text.replace(/"/g,'""')+'"';}).join(',')).join('\r\n');
+  const url=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'})),link=document.createElement('a');link.href=url;link.download='onepiece-universe-stocks.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
 async function loadTable(table) {
   currentTable = table;
   setError('');
@@ -703,6 +849,14 @@ async function loadTable(table) {
   renderNav();
   content.innerHTML = '<div class="panel"><div class="shell-head"><div><div style="' + SYNE_STYLE_MD + '">Loading ' + escapeHtml(table) + '</div><div class="subtle">Fetching schema and rows from the backend...</div></div><span class="chip">Loading</span></div><div class="empty-state">Please wait while the table loads.</div></div>';
   try {
+    if(table==='User activity'){await loadAdminActivity();return;}
+    if(table==='User management'){await loadUserManagement();return;}
+    if(table==='Stocks Config'){await loadUniverseStockConfig();return;}
+    if(table==='Leader board'){
+      var ranking=await fetchJson('/api/admin/leaderboard');if(!ranking.success)throw new Error(ranking.error);
+      document.getElementById('table-title').textContent='Leader board';document.getElementById('table-meta').textContent='Portfolio XIRR • Updated '+new Date(ranking.as_of).toLocaleString();
+      content.innerHTML='<div style="overflow:auto"><table><thead><tr><th>Rank</th><th>User</th><th>Email</th><th>XIRR</th><th>Status</th></tr></thead><tbody>'+ranking.data.map(row=>'<tr><td>'+(row.rank??'—')+'</td><td>'+escapeHtml(row.name)+'</td><td>'+escapeHtml(row.email)+'</td><td>'+(row.xirr_pct===null?'—':row.xirr_pct.toFixed(2)+'%')+'</td><td>'+escapeHtml(row.status)+'</td></tr>').join('')+'</tbody></table></div>';setBanner('Leader board loaded.',true);return;
+    }
     var result = await fetchJson('/api/admin/table/' + table);
     if (!result.success) throw new Error(result.error || 'Unable to load table');
     currentSchema = result.columns || [];

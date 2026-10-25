@@ -1,3 +1,8 @@
+const userActivity=require('./user-activity');
+const rebalancing=require('./rebalancing');
+const {UNAVAILABLE,accountAccessMessage,migrateUserAccess,createUserAuth,changeUserAccess}=require('./user-access');
+const {xirrEligible}=require('./xirr-eligibility');
+const {validateNewStock,addUniverseStock,deleteUniverseStock}=require('./admin-universe');
 const express  = require("express");
 const cors     = require("cors");
 const { createClient } = require("@libsql/client");
@@ -9,10 +14,17 @@ const XLSX     = require("xlsx");
 const fs       = require("fs");
 const path     = require("path");
 const adminPageHtml = require("./admin-page");
-const { matchStock, changeStockCode } = require('./stock-code-settings');
+const { matchStock } = require('./stock-code-settings');
 const { validateTradeNumbers } = require('./trade-validation');
 const { validateSIPConfig } = require('./sip-config-validation');
 const { createWatchlistCronHandler } = require('./watchlist-scheduler');
+const {schema:watchlistSchema,createWatchlists}=require('./named-watchlists');
+const {leaderboard,uniqueStocks}=require('./admin-insights');
+const {schema:universeConfigSchema,yahooCodeSchema,applyYahooCodes,saveUniverseConfig}=require('./universe-stock-config');
+const {schema:yahooCacheSchema,sharedSchema,createYahooPrices}=require('./yahoo-prices');
+const {createSharedPriceRefresh}=require('./shared-price-refresh');
+const YahooFinance=require('yahoo-finance2').default;
+const yahooClient=new YahooFinance({suppressNotices:['yahooSurvey'],fetch:(url,options)=>fetch(url,{...options,signal:AbortSignal.timeout(10000)})});
 
 const app = express();
 function firstNonEmptyEnv(...keys) {
@@ -52,9 +64,16 @@ const responsiveJs = fs.readFileSync(path.join(__dirname, "responsive.js"), "utf
 // Serve the self-contained validator from the loaded module: bundlers may inline
 // required JS modules rather than retain their original source files on disk.
 const sipValidationJs = `globalThis.validateSIPConfig = ${validateSIPConfig.toString()};`;
+app.get('/xirr-eligibility.js',(req,res)=>res.set('Cache-Control','no-cache').type('js').send('globalThis.xirrEligible = '+xirrEligible.toString()+';'));
 app.get("/sip-config-validation.js", (req, res) => res.set("Cache-Control", "no-cache").type("js").send(sipValidationJs));
 app.get("/responsive.css", (req, res) => res.set("Cache-Control", "no-cache").type("css").send(responsiveCss));
 app.get("/responsive.js", (req, res) => res.set("Cache-Control", "no-cache").type("js").send(responsiveJs));
+const rebalancingJs=fs.readFileSync(path.join(__dirname,'rebalancing-ui.js'),'utf8');
+app.get('/rebalancing-ui.js',(req,res)=>res.set('Cache-Control','no-cache').type('js').send(rebalancingJs));
+const userActivityJs=fs.readFileSync(path.join(__dirname,'user-activity-client.js'),'utf8');
+app.get('/user-activity-client.js',(req,res)=>res.set('Cache-Control','no-cache').type('js').send(userActivityJs));
+const adminActivityJs=fs.readFileSync(path.join(__dirname,'admin-activity.js'),'utf8');
+app.get('/admin-activity.js',(req,res)=>res.set('Cache-Control','no-cache').type('js').send(adminActivityJs));
 app.use(express.static(path.join(__dirname)));
 app.get("/", async (req, res) => {
   try {
@@ -175,6 +194,8 @@ const db = {
 // ─────────────────────────────────────────
 dbReady = (async () => {
   const statements = [
+    rebalancing.schema,
+    ...userActivity.schema,
     `CREATE TABLE IF NOT EXISTS users (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       email      TEXT    UNIQUE NOT NULL,
@@ -229,6 +250,13 @@ dbReady = (async () => {
   for (const statement of statements) {
     await execRaw(statement);
   }
+  for(const statement of watchlistSchema)await execRaw(statement);
+  await execRaw('CREATE TABLE IF NOT EXISTS stock_sip_budgets(user_id INTEGER NOT NULL,ticker TEXT NOT NULL,max_budget REAL NOT NULL CHECK(max_budget>0),PRIMARY KEY(user_id,ticker))');
+  await migrateUserAccess(sql=>remoteDb.execute(sql));
+  await execRaw(universeConfigSchema);
+  await execRaw(yahooCodeSchema);
+  await execRaw(yahooCacheSchema);
+  for(const statement of sharedSchema)await execRaw(statement);
   const tradeColumns = await allRaw("PRAGMA table_info(trade_history)");
   const portfolioColumns = await allRaw('PRAGMA table_info(portfolio)');
   for (const column of ['stock_name', 'ok_code']) {
@@ -252,8 +280,10 @@ dbReady = (async () => {
     await execRaw(`ALTER TABLE watchlist ADD COLUMN ${name} ${definitionSql}`);
     watchlistColumnNames.add(name);
   }
+  await ensureWatchlistColumn("in_default_watchlist", "INTEGER NOT NULL DEFAULT 1");
   await ensureWatchlistColumn("code", "TEXT NOT NULL DEFAULT ''");
   await ensureWatchlistColumn("stock_code", "TEXT NOT NULL DEFAULT ''");
+  await ensureWatchlistColumn("yahoo_finance_code", "TEXT NOT NULL DEFAULT ''");
   await ensureWatchlistColumn("name", "TEXT NOT NULL DEFAULT ''");
   await ensureWatchlistColumn("cmp", "REAL");
   await ensureWatchlistColumn("change", "REAL");
@@ -273,18 +303,17 @@ dbReady = (async () => {
     "INSERT OR IGNORE INTO users (email,password,name) VALUES (?,?,?)",
     [ONEPIECE_SYSTEM_EMAIL, systemPasswordHash, ONEPIECE_SYSTEM_NAME]
   );
+  const yahooSystem=await getRaw("SELECT id FROM users WHERE email=?",[ONEPIECE_SYSTEM_EMAIL]);
+  await transactionRaw(tx=>applyYahooCodes(tx,yahooSystem.id));
   await _rebuildAllPortfolios(dbRaw);
+  await runRaw("UPDATE watchlist SET cmp=NULL,change=NULL,ath=NULL,ath_date=NULL,price_as_of=NULL,quote_fetched_at=NULL,quote_error='Yahoo quote pending',source='YAHOO_FINANCE' WHERE user_id=(SELECT id FROM users WHERE email=?) AND source<>'YAHOO_FINANCE'",[ONEPIECE_SYSTEM_EMAIL]);
+  await runRaw("INSERT OR IGNORE INTO user_watchlists(user_id,slot,name,all_stocks) SELECT id,1,'Default watchlist',1 FROM users WHERE email<>?",[ONEPIECE_SYSTEM_EMAIL]);
 })();
 
 // ─────────────────────────────────────────
 // AUTH
 // ─────────────────────────────────────────
-function auth(req, res, next) {
-  const token = (req.headers.authorization || "").replace("Bearer ", "");
-  if (!token) return res.status(401).json({ success: false, error: "No token" });
-  try { req.user = jwt.verify(token, JWT_SECRET); req.user.role = req.user.role || "user"; next(); }
-  catch { res.status(401).json({ success: false, error: "Invalid or expired token" }); }
-}
+const auth=createUserAuth({db,jwt,secret:JWT_SECRET});
 
 function adminAuth(req, res, next) {
   const token = (req.headers.authorization || "").replace("Bearer ", "");
@@ -299,7 +328,7 @@ function adminAuth(req, res, next) {
 }
 
 function signUserToken(user) {
-  return jwt.sign({ id: user.id, email: user.email, role: "user" }, JWT_SECRET, { expiresIn: "30d" });
+  return jwt.sign({ id: user.id, email: user.email, role: "user", version:Number(user.token_version||0) }, JWT_SECRET, { expiresIn: "30d" });
 }
 
 function signAdminToken() {
@@ -409,24 +438,22 @@ function xirr(cashflows) {
 }
 
 function computeXIRR(trades, livePrice) {
-  if (!trades?.length) return null;
+  if (!xirrEligible(trades)) return null;
   const cashflows = trades.map(t => ({
     amount: t.type === "BUY" ? -Math.abs(t.amount) : +Math.abs(t.amount),
     date:   new Date(t.traded_at),
   }));
   const rem = trades.reduce((s, t) => s + (t.type === "BUY" ? t.shares : -t.shares), 0);
+  if (rem > 0.0001 && !(Number.isFinite(livePrice) && livePrice > 0)) return null;
   if (rem > 0.0001 && livePrice > 0) cashflows.push({ amount: rem * livePrice, date: new Date() });
   return xirr(cashflows);
 }
 
-// PRICE FETCH (Google Sheets only + cache)
+// Admin manages the stock universe; Yahoo Finance supplies market data.
 const priceCache = {};
 const CACHE_TTL  = 5 * 60 * 1000;
 const ONEPIECE_SYSTEM_EMAIL = (process.env.ONEPIECE_SYSTEM_EMAIL || "__onepiece_system__@onepiece.local").toLowerCase();
 const ONEPIECE_SYSTEM_NAME = process.env.ONEPIECE_SYSTEM_NAME || "OnePiece System";
-const GOOGLE_SHEETS_CSV_URL = process.env.GOOGLE_SHEETS_CSV_URL || process.env.GOOGLE_SHEETS_URL || '';
-const GOOGLE_SHEETS_ID = process.env.GOOGLE_SHEETS_ID || '';
-const GOOGLE_SHEETS_GID = process.env.GOOGLE_SHEETS_GID || process.env.GOOGLE_SHEET_GID || '';
 let onepieceSystemUserIdPromise = null;
 
 async function getOnepieceSystemUserId() {
@@ -459,63 +486,12 @@ async function getOnepieceSystemUserId() {
   }
 }
 
-function parseNumber(v) {
-  if (v === null || v === undefined || v === '') return null;
-  if (typeof v === 'number' && Number.isFinite(v)) return v;
-  const n = Number(String(v).replace(/,/g, '').trim());
-  return Number.isFinite(n) ? n : null;
-}
-
-function normalizeHeaderName(value) {
-  return String(value || '')
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-}
-
 function normalizeTickerValue(value) {
   return String(value || '')
     .toUpperCase()
     .trim()
     .replace(/^(NSE|BSE|BOM|BO|NS):/i, '')
     .replace(/\s+/g, ' ');
-}
-
-function getGoogleSheetsSourceUrl(outputFormat = 'csv') {
-  const source = GOOGLE_SHEETS_CSV_URL;
-  if (source) {
-    const normalized = String(source).trim();
-    try {
-      const url = new URL(normalized);
-      if (/\/pubhtml$/i.test(url.pathname) || /\/pub$/i.test(url.pathname)) {
-        url.pathname = url.pathname.replace(/\/pubhtml$/i, '/pub').replace(/\/pub$/i, '/pub');
-        url.searchParams.set('output', outputFormat);
-        return url.toString();
-      }
-      return normalized;
-    } catch {
-      if (/\/pubhtml(\?.*)?$/i.test(normalized)) return normalized.replace(/\/pubhtml(\?.*)?$/i, `/pub?output=${encodeURIComponent(outputFormat)}`);
-      if (/\/pub(\?.*)?$/i.test(normalized) && !new RegExp(`[?&]output=${outputFormat}`, 'i').test(normalized)) {
-        return `${normalized}${normalized.includes('?') ? '&' : '?'}output=${encodeURIComponent(outputFormat)}`;
-      }
-      return normalized;
-    }
-  }
-  if (!GOOGLE_SHEETS_ID) return null;
-  const gidPart = GOOGLE_SHEETS_GID ? `&gid=${encodeURIComponent(GOOGLE_SHEETS_GID)}` : '';
-  return `https://docs.google.com/spreadsheets/d/${encodeURIComponent(GOOGLE_SHEETS_ID)}/export?format=${encodeURIComponent(outputFormat)}${gidPart}`;
-}
-
-function getSheetCell(row, candidates) {
-  if (!Array.isArray(row)) return null;
-  for (const idx of candidates) {
-    if (idx >= 0 && idx < row.length) {
-      const value = row[idx];
-      if (value !== undefined && value !== null && String(value).trim() !== '') return value;
-    }
-  }
-  return null;
 }
 
 function normalizeExchangeCode(value) {
@@ -550,249 +526,39 @@ function deriveExchangeFromTicker(ticker) {
   return match ? normalizeExchangeCode(match[1]) : '';
 }
 
-async function fetchGoogleSheetRows() {
-  const source = String(GOOGLE_SHEETS_CSV_URL || '').trim();
-  const preferXlsx = !!source && /docs\.google\.com\/spreadsheets\/d\/e\//i.test(source) && /\/pub(html)?/i.test(source);
-  const requestUrl = getGoogleSheetsSourceUrl(preferXlsx ? 'xlsx' : 'csv');
-  if (!requestUrl) throw new Error('Google Sheets source is not configured');
-
-  if (preferXlsx) {
-    const res = await axios.get(requestUrl, {
-      headers: {
-        Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*',
-        'User-Agent': 'Mozilla/5.0',
-      },
-      responseType: 'arraybuffer',
-      timeout: 15000,
-    });
-    const buf = Buffer.isBuffer(res.data) ? res.data : Buffer.from(res.data);
-    if (!buf.length) throw new Error('Google Sheets XLSX export returned empty data');
-    const wb = XLSX.read(buf, { type: 'buffer' });
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    return XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
-  }
-
-  const res = await axios.get(requestUrl, {
-    headers: {
-      Accept: 'text/csv,text/plain,*/*',
-      'User-Agent': 'Mozilla/5.0',
-    },
-    timeout: 15000,
-  });
-
-  const csvText = typeof res.data === 'string' ? res.data : String(res.data || '');
-  if (!csvText.trim()) throw new Error('Google Sheets returned an empty file');
-  const wb = XLSX.read(csvText, { type: 'string' });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  return XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+const yahooPrices=createYahooPrices({db,yf:yahooClient});
+function matchPriceStock(holding,stocks){
+  return matchStock(holding,stocks)||matchStock({...holding,ticker:normalizeTickerValue(holding.ticker)},stocks);
 }
-
-function pickSheetCellByHeaders(row, headerIndex, candidates) {
-  for (const candidate of candidates) {
-    const idx = headerIndex[candidate];
-    if (idx === undefined) continue;
-    const value = String(row[idx] ?? '').trim();
-    if (value) return value;
-  }
-  return '';
+async function universeStock(ticker){
+  const stocks=await db.prepare('SELECT ticker,stock_code,yahoo_finance_code,code,name FROM watchlist WHERE user_id=?').all(await getOnepieceSystemUserId());
+  const stock=matchPriceStock({ticker:String(ticker).toUpperCase()},stocks);
+  if(!stock)throw new Error('Stock not found in the stock universe: '+ticker);
+  return stock;
 }
-
-function parseOnepieceWatchlistRows(rows) {
-  if (!rows.length) throw new Error('Google Sheets does not contain any rows');
-  const headerRowIndex = rows.findIndex(row => Array.isArray(row) && row.some(cell => String(cell || '').trim() !== ''));
-  if (headerRowIndex < 0) throw new Error('Google Sheets is missing a header row');
-
-  const rawHeaders = rows[headerRowIndex].map(v => String(v || '').trim());
-  const headers = rawHeaders.map((h, i) => h || `Column ${i + 1}`);
-  const normalizedHeaders = headers.map(normalizeHeaderName);
-  const headerIndex = {};
-  normalizedHeaders.forEach((h, i) => { if (h && headerIndex[h] === undefined) headerIndex[h] = i; });
-
-  const parsedRows = [];
-  const dataRows = [];
-  for (let i = headerRowIndex + 1; i < rows.length; i++) {
-    const row = Array.isArray(rows[i]) ? rows[i] : [];
-    const values = headers.map((_, idx) => String(row[idx] ?? '').trim());
-    if (!values.some(Boolean)) continue;
-    dataRows.push(values);
-
-    const stockCode = pickSheetCellByHeaders(values, headerIndex, ['stock_code', 'stockcode', 'ticker', 'symbol', 'stock_symbol']);
-    const code = pickSheetCellByHeaders(values, headerIndex, ['code', 'scrip_code', 'security_code']);
-    const name = pickSheetCellByHeaders(values, headerIndex, ['name', 'company', 'company_name', 'security_name', 'stock_name']);
-    const cmpText = pickSheetCellByHeaders(values, headerIndex, ['cmp', 'price', 'ltp', 'last_price', 'lastprice', 'close', 'closing_price']);
-    const changeText = pickSheetCellByHeaders(values, headerIndex, ['change', 'net_change', 'day_change']);
-    const weekHighText = pickSheetCellByHeaders(values, headerIndex, ['week_52_high', 'week52_high', '52_week_high', 'high_52_week', 'high_52w', 'fifty_two_week_high']);
-    const athText = pickSheetCellByHeaders(values, headerIndex, ['ath', 'all_time_high', 'alltimehigh']) || weekHighText;
-    const athDateText = pickSheetCellByHeaders(values, headerIndex, ['ath_date', 'all_time_high_date', 'alltimehighdate', 'date_of_ath']);
-    const peText = pickSheetCellByHeaders(values, headerIndex, ['pe', 'p_e', 'pe_ratio', 'price_earning_ratio']);
-
-    const ticker = normalizeTickerValue(stockCode || code || name);
-    if (!ticker) continue;
-
-    const rawObj = {};
-    headers.forEach((header, idx) => { rawObj[header] = values[idx] ?? ''; });
-    parsedRows.push({
-      ticker,
-      code: String(code || '').trim().toUpperCase(),
-      stock_code: String(stockCode || '').trim().toUpperCase(),
-      name: String(name || ticker).trim(),
-      cmp: parseNumber(cmpText),
-      change: parseNumber(changeText),
-      week52_high: parseNumber(weekHighText),
-      ath: parseNumber(athText),
-      ath_date: athDateText || null,
-      pe: parseNumber(peText),
-      source: 'ONEPIECE_SHEET',
-      raw_json: JSON.stringify(rawObj),
-    });
-  }
-
-  return { headers, dataRows, parsedRows };
-}
-
-async function fetchGoogleSheetTableData() {
-  const rows = await fetchGoogleSheetRows();
-  const { headers, dataRows } = parseOnepieceWatchlistRows(rows);
-  return {
-    headers,
-    rows: dataRows,
-    total: dataRows.length,
-  };
-}
-
-async function syncOnepieceWatchlistTable() {
-  const systemUserId = Number(await getOnepieceSystemUserId());
-  if (!Number.isFinite(systemUserId) || systemUserId <= 0) {
-    throw new Error("Failed to resolve OnePiece system user");
-  }
-  const rows = await fetchGoogleSheetRows();
-  const { parsedRows } = parseOnepieceWatchlistRows(rows);
-  const dedupByTicker = new Map();
-  for (const item of parsedRows) dedupByTicker.set(item.ticker, item);
-  const finalRows = Array.from(dedupByTicker.values());
-  if(!finalRows.length)throw new Error('Google Sheets returned no valid stocks; existing watchlist retained.');
-
-  await transactionRaw(async (tx) => {
-    await tx.execute({ sql: "DELETE FROM watchlist WHERE user_id=?", args: [systemUserId] });
-    for (const row of finalRows) {
-      await tx.execute({
-        sql: "INSERT INTO watchlist (user_id,ticker,code,stock_code,name,cmp,change,week52_high,pe,source,raw_json,updated_at,added_at,ath,ath_date,price_as_of,quote_fetched_at,quote_error) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        args: [
-          systemUserId,
-          row.ticker,
-          row.code || '',
-          row.stock_code || '',
-          row.name || row.ticker,
-          row.cmp,
-          row.change,
-          row.week52_high,
-          row.pe,
-          row.source,
-          row.raw_json || null,
-          new Date().toISOString(),
-          new Date().toISOString(),
-          row.ath ?? null,
-          row.ath_date ?? null,
-          row.price_as_of ?? null,
-          row.quote_fetched_at ?? null,
-          row.quote_error ?? null,
-        ],
-      });
+async function fetchPrice(ticker){return yahooPrices.readStock(await universeStock(ticker));}
+async function fetchPriceFromWatchlistTable(ticker){return fetchPrice(ticker);}
+async function refreshYahooUniverse(){
+  const systemId=await getOnepieceSystemUserId();
+  const stocks=await db.prepare('SELECT ticker,stock_code,yahoo_finance_code,code,name FROM watchlist WHERE user_id=?').all(systemId);
+  let index=0,successful=0,failed=0;const deadline=Date.now()+75000;
+  await Promise.all(Array.from({length:Math.min(6,stocks.length)},async()=>{
+    while(index<stocks.length){
+      const stock=stocks[index++];let data;
+      try{
+        if(Date.now()>deadline)throw new Error('Refresh time limit reached; retry to load this stock');
+        data=await yahooPrices.fetchStock(stock);successful++;
+      }catch(error){failed++;data={price:null,change:null,ath:null,ath_date:null,price_as_of:null,quote_fetched_at:null,quote_error:error.message};}
+      await db.prepare('UPDATE watchlist SET cmp=?,change=?,ath=?,ath_date=?,price_as_of=?,quote_fetched_at=?,quote_error=?,source=? WHERE user_id=? AND ticker=? AND yahoo_finance_code=?').run(data.price,data.change,data.ath,data.ath_date,data.price_as_of,data.quote_fetched_at,data.quote_error||null,'YAHOO_FINANCE',systemId,stock.ticker,stock.yahoo_finance_code);
     }
-  });
-
-  for (const key of Object.keys(priceCache)) delete priceCache[key];
-  return { total: finalRows.length };
+  }));
+  return {total:stocks.length,successful,failed};
 }
-
-async function fetchPriceFromWatchlistTable(ticker) {
-  const systemUserId = await getOnepieceSystemUserId();
-  const targetTicker = normalizeTickerValue(ticker);
-  const rawTicker = String(ticker || '').trim().toUpperCase();
-  const row = await db.prepare(
-    `SELECT ticker, code, stock_code, name, cmp, change, ath, ath_date, pe, source
-     FROM watchlist
-     WHERE user_id=? AND source='ONEPIECE_SHEET'
-       AND (
-         UPPER(ticker)=?
-         OR UPPER(ticker)=?
-         OR UPPER(stock_code)=?
-         OR UPPER(code)=?
-         OR UPPER(stock_code)=?
-       )
-     ORDER BY id DESC
-     LIMIT 1`
-  ).get(
-    systemUserId,
-    targetTicker,
-    rawTicker,
-    rawTicker,
-    rawTicker,
-    targetTicker
-  );
-
-  if (!row || row.cmp === null || row.cmp === undefined) {
-    throw new Error(`No price found in watchlist table for ${ticker}`);
-  }
-
-  const price = Number(row.cmp);
-  const dayChange = row.change === null || row.change === undefined ? 0 : Number(row.change);
-  const prevClose = price - dayChange;
-  const changePct = prevClose ? (dayChange / prevClose) * 100 : 0;
-  return {
-    ticker: targetTicker,
-    name: row.name || row.stock_code || row.code || targetTicker,
-    exchange: 'WATCHLIST',
-    price,
-    prevClose: Number.isFinite(prevClose) ? prevClose : 0,
-    change: Number.isFinite(dayChange) ? dayChange : 0,
-    changePct: Number.isFinite(changePct) ? changePct : 0,
-    ath: row.ath == null ? null : Number(row.ath),
-    ath_date: row.ath_date || null,
-    source: row.source || 'WATCHLIST_TABLE',
-  };
-}
-
-async function fetchPriceFromGoogleSheets(ticker) {
-  const rows = await fetchGoogleSheetRows();
-  const { parsedRows } = parseOnepieceWatchlistRows(rows);
-  const targetTicker = normalizeTickerValue(ticker);
-  const matched = parsedRows.find(r => normalizeTickerValue(r.ticker) === targetTicker);
-  if (!matched || matched.cmp === null || matched.cmp === undefined) {
-    throw new Error(`No CMP found for ${ticker} in Google Sheets`);
-  }
-  const price = Number(matched.cmp);
-  const dayChange = matched.change === null || matched.change === undefined ? 0 : Number(matched.change);
-  const prevClose = price - dayChange;
-  const changePct = prevClose ? (dayChange / prevClose) * 100 : 0;
-  return {
-    ticker: targetTicker,
-    name: matched.name || targetTicker,
-    exchange: 'SHEETS',
-    price,
-    prevClose: Number.isFinite(prevClose) ? prevClose : 0,
-    change: Number.isFinite(dayChange) ? dayChange : 0,
-    changePct: Number.isFinite(changePct) ? changePct : 0,
-    ath: matched.ath,
-    ath_date: matched.ath_date,
-    source: 'GOOGLE_SHEETS',
-  };
-}
-
-async function fetchPrice(ticker) {
-  const cacheKey = `price:${normalizeTickerValue(ticker)}`;
-  const cached = priceCache[cacheKey];
-  if (cached && Date.now() - cached.cachedAt < CACHE_TTL) return cached;
-
-  let base;
-  try {
-    base = await fetchPriceFromWatchlistTable(ticker);
-  } catch {
-    base = await fetchPriceFromGoogleSheets(ticker);
-  }
-  const result = { ...base, cachedAt: Date.now() };
-  priceCache[cacheKey] = result;
-  return result;
+const coordinatedPriceRefresh=createSharedPriceRefresh({db,transactionRaw,refresh:refreshYahooUniverse});
+async function refreshPricesForSession(){
+  await dbReady;
+  try{return await coordinatedPriceRefresh();}
+  catch(error){return {error:error.message};}
 }
 
 // ─────────────────────────────────────────
@@ -925,9 +691,8 @@ app.post("/api/auth/signup", async (req, res) => {
   if (await db.prepare("SELECT id FROM users WHERE email=?").get(email.toLowerCase()))
     return res.status(400).json({ success:false, error:"Email already registered" });
   const hashed = await bcrypt.hash(password, 10);
-  const result = await db.prepare("INSERT INTO users (email,password,name) VALUES (?,?,?)").run(email.toLowerCase(), hashed, name||email.split("@")[0]);
-  const token  = signUserToken({ id: result.lastInsertRowid, email: email.toLowerCase() });
-  res.json({ success:true, token, user:{ id:result.lastInsertRowid, email:email.toLowerCase(), name:name||email.split("@")[0] } });
+  await db.prepare("INSERT INTO users (email,password,name,account_status) VALUES (?,?,?,'pending')").run(email.toLowerCase(),hashed,name||email.split('@')[0]);
+  res.status(201).json({success:true,approval_required:true,message:'Signup successful. Please wait for admin approval before signing in.'});
 });
 
 app.post("/api/auth/login", async (req, res) => {
@@ -936,7 +701,9 @@ app.post("/api/auth/login", async (req, res) => {
   const user = await db.prepare("SELECT * FROM users WHERE email=?").get(email.toLowerCase());
   if (!user || !(await bcrypt.compare(password, user.password)))
     return res.status(401).json({ success:false, error:"Invalid email or password" });
+  if(user.account_status!=='approved'||user.deleted_at)return res.status(403).json({success:false,error:accountAccessMessage(user)});
   const token = signUserToken(user);
+  await refreshPricesForSession();
   res.json({ success:true, token, user:{ id:user.id, email:user.email, name:user.name } });
 });
 
@@ -947,6 +714,7 @@ app.post("/api/auth/admin-login", async (req, res) => {
     return res.status(401).json({ success:false, error:"Invalid admin credentials" });
   }
   const token = signAdminToken();
+  await refreshPricesForSession();
   res.json({ success:true, token, user:{ email: ADMIN_EMAIL, role: "admin", name: "OnePiece Admin" } });
 });
 
@@ -1014,43 +782,95 @@ app.get("/logout", async (req, res) => {
   res.type("html").send(logoutHtml("/#public-overview"));
 });
 
-app.get("/api/sheet/table", auth, async (req, res) => {
-  try {
-    const data = await fetchGoogleSheetTableData();
-    res.json({ success: true, data });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message || "Failed to load Google Sheet table" });
-  }
+const discovery=require('./stock-discovery').createStockDiscovery({yf:yahooClient,prices:yahooPrices,systemId:getOnepieceSystemUserId});
+const namedWatchlists=createWatchlists({db,transactionRaw,systemId:getOnepieceSystemUserId,readPrices:yahooPrices.readStocks,discovery});
+namedWatchlists.register(app,auth);
+app.get('/api/admin/stocks/search',adminAuth,async(req,res)=>{try{res.set('Cache-Control','no-store').json({success:true,data:await discovery.search(req.query.q)});}catch(e){res.status(e.status||500).json({success:false,error:e.message});}});
+app.get('/api/admin/stock-config',adminAuth,async(req,res)=>{
+  try{res.set('Cache-Control','no-store').json({success:true,data:await namedWatchlists.universe()});}
+  catch(e){res.status(500).json({success:false,error:e.message});}
 });
-
+app.put('/api/admin/default-watchlist/:ticker',adminAuth,async(req,res)=>{
+ try{
+ if(typeof req.body.included!=='boolean')return res.status(400).json({success:false,error:'included must be true or false.'});
+ const systemId=await getOnepieceSystemUserId();
+ if(req.body.included){const stock=await db.prepare('SELECT * FROM watchlist WHERE user_id=? AND ticker=?').get(systemId,req.params.ticker);if(!stock)return res.status(404).json({success:false,error:'Stock not found.'});try{validateNewStock(stock);}catch(e){return res.status(400).json({success:false,error:'Configure CODE, Stock Code and Yahoo Finance Code before adding to the default watchlist.'});}}
+ const result=await db.prepare('UPDATE watchlist SET in_default_watchlist=? WHERE user_id=? AND ticker=?').run(req.body.included?1:0,systemId,req.params.ticker);
+ if(!result.changes)return res.status(404).json({success:false,error:'Stock not found.'});
+ res.json({success:true});
+ }catch(e){res.status(500).json({success:false,error:e.message});}
+});
+app.post('/api/admin/stock-config',adminAuth,async(req,res)=>{
+  try{
+    const stock=validateNewStock(req.body),systemId=await getOnepieceSystemUserId();
+    let quote;try{quote=await yahooPrices.fetchStock(stock);}catch(e){return res.status(502).json({success:false,error:'Yahoo lookup failed: '+e.message});}
+    const data=await transactionRaw(tx=>addUniverseStock(tx,systemId,stock,quote));
+    res.status(201).json({success:true,data});
+  }catch(e){res.status(e.status||500).json({success:false,error:e.message});}
+});
+app.delete('/api/admin/stock-config/:ticker',adminAuth,async(req,res)=>{
+  try{const systemId=await getOnepieceSystemUserId();const data=await transactionRaw(tx=>deleteUniverseStock(tx,systemId,req.params.ticker));res.json({success:true,data});}
+  catch(e){res.status(e.status||500).json({success:false,error:e.message});}
+});
+app.put('/api/admin/stock-config/:ticker',adminAuth,async(req,res)=>{
+  try{
+    const systemId=await getOnepieceSystemUserId();
+    const data=await transactionRaw(tx=>saveUniverseConfig(tx,systemId,req.params.ticker,req.body));
+    for(const key of Object.keys(priceCache))delete priceCache[key];
+    res.json({success:true,data});
+  }catch(e){res.status(e.status||500).json({success:false,error:e.message});}
+});
+app.get('/api/admin/leaderboard',adminAuth,async(req,res)=>{
+  try{
+    const users=await db.prepare("SELECT id,name,email FROM users WHERE email<>? AND account_status='approved' AND deleted_at IS NULL").all(ONEPIECE_SYSTEM_EMAIL);
+    const holdings=await db.prepare('SELECT * FROM portfolio').all();
+    const trades=await db.prepare('SELECT * FROM trade_history').all();
+    res.set('Cache-Control','no-store').json({success:true,data:leaderboard(users,holdings,trades,await namedWatchlists.universe(),xirr,matchPriceStock),as_of:new Date().toISOString()});
+  }catch(e){res.status(500).json({success:false,error:e.message});}
+});
+app.get('/api/admin/stocks',async(req,res)=>{
+  try{
+    const users=await db.prepare('SELECT id FROM users WHERE email<>?').all(ONEPIECE_SYSTEM_EMAIL);
+    const stocks=[];
+    for(const user of users)for(const list of await namedWatchlists.lists(user.id))stocks.push(...await namedWatchlists.stocks(user.id,list.id));
+    stocks.push(...await db.prepare('SELECT * FROM watchlist WHERE user_id<>?').all(await getOnepieceSystemUserId()));
+    const holdings=await db.prepare('SELECT * FROM portfolio WHERE shares>0').all();
+    const data=uniqueStocks(holdings,stocks,await namedWatchlists.universe(),matchStock);
+    res.set('Cache-Control','no-store').json({success:true,total:data.length,data});
+  }catch(e){res.status(500).json({success:false,error:e.message});}
+});
 app.get("/api/watchlist/table", auth, async (req, res) => {
   try {
     const systemUserId = await getOnepieceSystemUserId();
     const rows = await db.prepare(
-      `SELECT id,ticker,code,stock_code,name,cmp,change,ath,ath_date,pe,source,updated_at,price_as_of,quote_fetched_at,quote_error
+      `SELECT id,ticker,code,stock_code,yahoo_finance_code,name,cmp,change,ath,ath_date,pe,source,updated_at,price_as_of,quote_fetched_at,quote_error
        FROM watchlist
        WHERE user_id=?
        ORDER BY ticker ASC`
     ).all(systemUserId);
-    res.json({ success: true, data: rows });
+    res.json({ success: true, data: await yahooPrices.readStocks(rows) });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message || "Failed to load watchlist table" });
   }
 });
 
-app.get("/api/cron/watchlist", createWatchlistCronHandler({db,sync:syncOnepieceWatchlistTable}));
+app.post('/api/prices/refresh',auth,async(req,res)=>{
+  const summary=await refreshPricesForSession();
+  res.set('Cache-Control','no-store').json({success:!summary.error,summary,error:summary.error});
+});
+app.get("/api/cron/watchlist", createWatchlistCronHandler({db,sync:coordinatedPriceRefresh}));
 
 app.post("/api/watchlist/sync", auth, async (req, res) => {
   try {
-    const summary = await syncOnepieceWatchlistTable();
+    const summary = {cached:true};
     const systemUserId = await getOnepieceSystemUserId();
     const rows = await db.prepare(
-      `SELECT id,ticker,code,stock_code,name,cmp,change,ath,ath_date,pe,source,updated_at,price_as_of,quote_fetched_at,quote_error
+      `SELECT id,ticker,code,stock_code,yahoo_finance_code,name,cmp,change,ath,ath_date,pe,source,updated_at,price_as_of,quote_fetched_at,quote_error
        FROM watchlist
        WHERE user_id=?
        ORDER BY ticker ASC`
     ).all(systemUserId);
-    res.json({ success: true, summary, data: rows });
+    res.json({ success: true, summary, data: await yahooPrices.readStocks(rows) });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message || "Watchlist sync failed" });
   }
@@ -1109,28 +929,6 @@ app.get("/api/stock/:ticker/sip", auth, async (req, res) => {
 // GET /api/portfolio — returns holdings INSTANTLY from DB (no price fetch)
 //   Frontend calls /api/price/:ticker per-row to load CMP asynchronously
 // ─────────────────────────────────────────
-app.get('/api/settings/stocks', auth, async (req, res) => {
-  try {
-    const holdings = await db.prepare('SELECT * FROM portfolio WHERE user_id=? ORDER BY ticker').all(req.user.id);
-    const stocks = await db.prepare('SELECT ticker,stock_code,code,name FROM watchlist WHERE user_id=? ORDER BY id DESC').all(await getOnepieceSystemUserId());
-    res.json({success:true,data:holdings.map(h => {
-      const stock = matchStock(h, stocks);
-      return {id:h.id,stock_code:h.ticker,name:h.stock_name || stock?.name || h.ticker,ok_code:h.stock_name ? (h.ok_code || '') : (h.ok_code || stock?.code || '')};
-    })});
-  } catch (err) { res.status(500).json({success:false,error:err.message}); }
-});
-
-app.put('/api/settings/stocks/:id', auth, async (req, res) => {
-  try {
-    const raw = typeof req.body.stock_code === 'string' ? req.body.stock_code.trim().toUpperCase() : '';
-    if (!/^(?:(?:NSE|BSE|BOM):)?[A-Z0-9][A-Z0-9&._-]{0,49}$/.test(raw)) return res.status(400).json({success:false,error:'Enter a valid stock code, such as NSE:RELIANCE or BOM:500325.'});
-    const trade = splitTradeSymbol(raw);
-    const stocks = await db.prepare('SELECT ticker,stock_code,code,name FROM watchlist WHERE user_id=? ORDER BY id DESC').all(await getOnepieceSystemUserId());
-    const data = await transactionRaw(tx => changeStockCode(tx,req.user.id,req.params.id,req.body.expected_stock_code,trade.ticker,trade.exchange,stocks,{okCode:typeof req.body.ok_code==='string' ? req.body.ok_code.trim() : req.body.ok_code,expectedOkCode:req.body.expected_ok_code}));
-    res.json({success:true,data});
-  } catch (err) { res.status(err.status || 500).json({success:false,error:err.message}); }
-});
-
 app.get("/api/portfolio", auth, async (req, res) => {
   const uid      = req.user.id;
   const holdings = await db.prepare("SELECT * FROM portfolio WHERE user_id=? ORDER BY added_at DESC").all(uid);
@@ -1144,7 +942,8 @@ app.get("/api/portfolio", auth, async (req, res) => {
     withTrades.push({ ...h, tradeCount: trades.length, trades });
   }
 
-  res.json({ success:true, data:{ holdings: withTrades } });
+  const portfolioTrades=await db.prepare('SELECT type,traded_at FROM trade_history WHERE user_id=? ORDER BY traded_at,id').all(uid);
+  res.json({ success:true, data:{ holdings: withTrades, xirr_eligible:xirrEligible(portfolioTrades,true) } });
 });
 
 // GET /api/portfolio/:ticker/xirr
@@ -1172,51 +971,91 @@ app.get("/api/portfolio/:ticker/xirr", auth, async (req, res) => {
                cashflow:t.type==="BUY"?-t.amount:+t.amount, runningShares:+rem.toFixed(4) };
     });
 
-    res.json({ success:true, ticker, xirrPct, livePrice, ath, cashflows });
+    res.json({ success:true, ticker, xirrPct, xirr_eligible:xirrEligible(trades), livePrice, ath, cashflows });
   } catch (err) { res.status(500).json({ success:false, error:err.message }); }
+});
+
+app.post('/api/activity/heartbeat',auth,async(req,res)=>{
+ try{await transactionRaw(tx=>userActivity.record(tx,req.user.id));res.status(204).end();}
+ catch{res.status(503).json({success:false,error:'Activity tracking temporarily unavailable.'});}
+});
+app.get('/api/admin/activity',adminAuth,async(req,res)=>{
+ try{res.set('Cache-Control','no-store').json({success:true,data:await userActivity.report(db,ONEPIECE_SYSTEM_EMAIL,Number(req.query.weeks||12))});}
+ catch(e){res.status(e.status||500).json({success:false,error:e.message});}
+});
+
+async function rebalanceContext(uid,ticker){
+ const [holdings,stocks,cfg]=await Promise.all([
+  db.prepare('SELECT * FROM portfolio WHERE user_id=? AND shares>0').all(uid),namedWatchlists.universe(),getOrSeedSIP(uid)
+ ]);
+ const allowed=new Set(stocks.filter(s=>Number(s.in_default_watchlist)!==0).map(s=>s.ticker));
+ const members=await db.prepare('SELECT i.ticker FROM user_watchlist_items i JOIN user_watchlists l ON l.id=i.watchlist_id WHERE l.user_id=?').all(uid);
+ members.forEach(s=>allowed.add(s.ticker));
+ holdings.forEach(h=>{const s=matchPriceStock(h,stocks);if(s)allowed.add(s.ticker);});
+ const sources=rebalancing.sourceRows(holdings,stocks,matchPriceStock);
+ const source=sources.find(s=>s.ticker===ticker);
+ const candidates=source?rebalancing.candidates(stocks,holdings,JSON.parse(cfg.levels),allowed,source,matchPriceStock):[];
+ return {sources,source,candidates};
+}
+app.get('/api/rebalancing',auth,async(req,res)=>{
+ try{const context=await rebalanceContext(req.user.id,req.query.ticker);res.set('Cache-Control','no-store').json({success:true,data:{sources:context.sources,source:context.source||null,candidates:context.candidates,combinations:context.source?rebalancing.combinations(context.candidates,context.source.market_value):[],date:rebalancing.indiaDate()}});}
+ catch(e){res.status(e.status||500).json({success:false,error:e.message});}
+});
+app.post('/api/rebalancing',auth,async(req,res)=>{
+ try{
+  const context=await rebalanceContext(req.user.id,req.body?.sell?.ticker);
+  const data=await transactionRaw(tx=>rebalancing.commit(tx,req.user.id,req.body,context));
+  res.json({success:true,data});
+ }catch(e){res.status(e.status||500).json({success:false,error:e.message});}
 });
 
 app.get('/api/portfolio-opportunities', auth, async (req, res) => {
   try {
     res.set('Cache-Control', 'no-store');
-    // Fetch the sheet once for this page load, then use the saved snapshot for all stocks.
-    await syncOnepieceWatchlistTable();
+    // Page navigation reads the shared cache; session refresh owns all provider calls.
     const uid = req.user.id;
     const scope = req.query.scope === 'watchlist' ? 'watchlist' : 'portfolio';
     const cfg = await getOrSeedSIP(uid);
-    const levels = JSON.parse(cfg.levels).slice(0, 7);
-    const watchlistStocks = await db.prepare('SELECT ticker,stock_code,code,name FROM watchlist WHERE user_id=? ORDER BY ticker').all(await getOnepieceSystemUserId());
+    const levels = JSON.parse(cfg.levels);
+    const watchlistStocks = await db.prepare('SELECT ticker,stock_code,yahoo_finance_code,code,name FROM watchlist WHERE user_id=? ORDER BY ticker').all(await getOnepieceSystemUserId());
     const holdings = scope === 'watchlist'
-      ? watchlistStocks.map(stock => ({ ...stock, ok_code: stock.code || '' }))
+      ? (await namedWatchlists.stocks(uid,req.query.watchlist_id)).map(stock => ({ ...stock, ok_code: stock.code || '' }))
       : await db.prepare('SELECT * FROM portfolio WHERE user_id=? AND shares>0 ORDER BY ticker').all(uid);
+    const overrides=await db.prepare('SELECT ticker,max_budget FROM stock_sip_budgets WHERE user_id=?').all(uid);
+    const budgetByTicker=new Map(overrides.map(o=>[matchStock(o,watchlistStocks)?.ticker||o.ticker,Number(o.max_budget)]));
     const rows = [];
     for (const holding of holdings) {
+      const master=matchStock(holding,watchlistStocks);
+      const code=String(master?.code ?? holding.ok_code ?? holding.code ?? '').trim();
+      const stockCode=String(master?.stock_code ?? holding.stock_code ?? '').trim();
+      if(!code||!stockCode)continue;
+      const stockBudget=budgetByTicker.get(master?.ticker||holding.ticker)??Number(cfg.max_budget);
       const trades = await db.prepare('SELECT type,shares,price FROM trade_history WHERE user_id=? AND ticker=? ORDER BY traded_at ASC,id ASC').all(uid, holding.ticker);
-      const quote = await fetchPriceFromWatchlistTable(holding.ticker);
+      let quote;
+      try{quote=await fetchPriceFromWatchlistTable(holding.ticker);}catch(error){quote={name:holding.name||holding.stock_name||holding.ticker,price:null,ath:null,ath_date:null,quote_error:error.message};}
       const ath = Number(quote.ath || 0), price = Number(quote.price || 0);
       const fall = ath > 0 ? ((price - ath) / ath) * 100 : null;
       const opportunityLevels = levels.map((level, index) => {
         const f = Number(level.fall);
         const lower = index < levels.length - 1 ? Number(levels[index + 1].fall) : -Infinity;
-        const allocationAmount = Number(cfg.max_budget) * Number(level.allocation) / 100;
+        const upperPrice = ath * (100 + f) / 100;
+        const lowerPrice = lower === -Infinity ? 0 : ath * (100 + lower) / 100;
+        const allocationAmount = stockBudget * Number(level.allocation) / 100;
         // Use the same non-overlapping price band for auto-selection and buy totals.
         // Zero-price bonus shares have no purchase-price zone; sales are not buys.
         const zoneBuys = trades.filter(t => t.type === 'BUY' && Number(t.price) > 0 && ath > 0 &&
-          Number(t.price) <= ath * (100 + f) / 100 &&
-          (lower === -Infinity || Number(t.price) > ath * (100 + lower) / 100));
+          Number(t.price) <= upperPrice && Number(t.price) > lowerPrice);
         const investedAmount = zoneBuys.reduce((sum,t) => sum + Number(t.price) * Number(t.shares), 0);
         const boughtQuantity = zoneBuys.reduce((sum,t) => sum + Number(t.shares), 0);
         return { fall: f, allocation: Number(level.allocation), allocated_amount: allocationAmount,
           invested_amount: investedAmount, bought_quantity: boughtQuantity,
-          shares_to_buy: price > 0 ? Math.floor(allocationAmount / price) : 0,
-          trigger_price: ath * (1 + f / 100), zone_min: lower, zone_max: f,
-          active: fall !== null && fall <= f && fall > lower, selected: zoneBuys.length > 0 };
+          shares_to_buy: price > 0 && ath > 0 ? Math.floor(allocationAmount / price) : 0,
+          trigger_price: upperPrice, zone_min: lower, zone_max: f,
+          active: ath > 0 && price > 0 && price <= upperPrice && price > lowerPrice, selected: zoneBuys.length > 0 };
       });
       rows.push({ ticker: holding.ticker, name: quote.name || holding.stock_name || holding.ticker,
-        ok_code: scope === 'watchlist' || holding.stock_name
-          ? (holding.ok_code || '')
-          : (holding.ok_code || matchStock(holding, watchlistStocks)?.code || ''),
-        price, ath, ath_date: quote.ath_date || null,
+        ok_code: code, max_budget:stockBudget,
+        price:quote.price==null?null:price, ath:quote.ath==null?null:ath, ath_date: quote.ath_date || null, quote_error:quote.quote_error||null,
         fall_pct: fall, levels: opportunityLevels });
     }
     rows.sort((a,b) => (b.fall_pct ?? 999) - (a.fall_pct ?? 999));
@@ -1338,7 +1177,7 @@ app.get("/api/trades/export", auth, async (req, res) => {
   const data = await db.prepare(`SELECT * FROM trade_history WHERE user_id=?
     AND substr(traded_at,1,10) BETWEEN ? AND ?
     ORDER BY traded_at ASC, id ASC`).all(req.user.id, start, end);
-  const stocks = await db.prepare('SELECT ticker,stock_code,code,name FROM watchlist WHERE user_id=? ORDER BY id DESC').all(await getOnepieceSystemUserId());
+  const stocks = await db.prepare('SELECT ticker,stock_code,yahoo_finance_code,code,name FROM watchlist WHERE user_id=? ORDER BY id DESC').all(await getOnepieceSystemUserId());
   res.json({ success:true, data:data.map(trade => {
     const stock = matchStock(trade, stocks);
     return { ...trade, stock_code:stock?.stock_code || trade.ticker, stock_name:trade.stock_name || stock?.name || '' };
@@ -1434,7 +1273,7 @@ app.get("/api/watchlist", auth, async (req, res) => {
   const items=await db.prepare("SELECT * FROM watchlist WHERE user_id=? ORDER BY added_at DESC").all(req.user.id);
   const enriched=await Promise.all(items.map(async w=>{
     try { return { ...w, ...(await fetchPrice(w.ticker)) }; }
-    catch { return { ...w, price:null }; }
+    catch(error) { return { ...w, price:null,cmp:null,ath:null,ath_date:null,change:null,quote_error:error.message }; }
   }));
   res.json({ success:true, data:enriched });
 });
@@ -1444,6 +1283,14 @@ app.delete("/api/watchlist/:ticker", auth, async (req,res)=>{ await db.prepare("
 // ─────────────────────────────────────────
 // ADMIN TABLE API
 // ─────────────────────────────────────────
+app.get('/api/admin/users',adminAuth,async(req,res)=>{
+ try{const data=await db.prepare('SELECT id,name,email,created_at,account_status,deleted_at FROM users WHERE email<>? ORDER BY created_at DESC,id DESC').all(ONEPIECE_SYSTEM_EMAIL);res.set('Cache-Control','no-store').json({success:true,data});}
+ catch(e){res.status(500).json({success:false,error:e.message});}
+});
+app.put('/api/admin/users/:id/access',adminAuth,async(req,res)=>{
+ try{res.json({success:true,data:await changeUserAccess(db,Number(req.params.id),req.body.action,ONEPIECE_SYSTEM_EMAIL)});}
+ catch(e){res.status(e.status||500).json({success:false,error:e.message});}
+});
 app.get("/api/admin/tables", adminAuth, async (req, res) => {
   try {
     const tables = [];
@@ -1488,6 +1335,7 @@ app.post("/api/admin/table/:table", adminAuth, async (req, res) => {
   try {
     const table = req.params.table;
     if (!ADMIN_TABLES.has(table)) return res.status(400).json({ success:false, error:"Invalid table" });
+    if(table==='users')return res.status(405).json({success:false,error:'Users must sign up and be approved in User management.'});
     const payload = await buildAdminPayload(table, req.body, true);
     const keys = Object.keys(payload);
     if (!keys.length) return res.status(400).json({ success:false, error:"No fields to insert" });
@@ -1506,6 +1354,7 @@ app.put("/api/admin/table/:table/:id", adminAuth, async (req, res) => {
     if (!ADMIN_TABLES.has(table)) return res.status(400).json({ success:false, error:"Invalid table" });
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ success:false, error:"Invalid id" });
+    if(table==='users')return res.status(405).json({success:false,error:'Use User management to change account access.'});
     const payload = await buildAdminPayload(table, req.body, false);
     const keys = Object.keys(payload);
     if (!keys.length) return res.status(400).json({ success:false, error:"No fields to update" });
@@ -1523,7 +1372,7 @@ app.delete("/api/admin/table/:table/:id", adminAuth, async (req, res) => {
     if (!ADMIN_TABLES.has(table)) return res.status(400).json({ success:false, error:"Invalid table" });
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ success:false, error:"Invalid id" });
-    await db.prepare(`DELETE FROM "${table}" WHERE id=?`).run(id);
+    if(table==='users'){await changeUserAccess(db,id,'delete',ONEPIECE_SYSTEM_EMAIL);}else await db.prepare(`DELETE FROM "${table}" WHERE id=?`).run(id);
     res.json({ success:true });
   } catch (err) {
     res.status(500).json({ success:false, error: err.message });
@@ -1533,6 +1382,24 @@ app.delete("/api/admin/table/:table/:id", adminAuth, async (req, res) => {
 // ─────────────────────────────────────────
 // SIP CONFIG
 // ─────────────────────────────────────────
+app.get('/api/sip-stock-budgets',auth,async(req,res)=>{
+ try{
+ const rows=await db.prepare('SELECT p.ticker,p.stock_name,b.max_budget FROM portfolio p LEFT JOIN stock_sip_budgets b ON b.user_id=p.user_id AND b.ticker=p.ticker WHERE p.user_id=? AND p.shares>0 ORDER BY p.ticker').all(req.user.id);
+ const universe=await namedWatchlists.universe();
+ res.json({success:true,data:rows.map(r=>({...r,name:matchStock(r,universe)?.name||r.stock_name||r.ticker}))});
+ }catch(e){res.status(500).json({success:false,error:e.message});}
+});
+app.put('/api/sip-stock-budgets/:ticker',auth,async(req,res)=>{
+ try{
+ const ticker=req.params.ticker,budget=req.body.max_budget;
+ if(budget!==null&&(typeof budget!=='number'||!Number.isFinite(budget)||budget<=0))return res.status(400).json({success:false,error:'Enter a budget greater than zero.'});
+ const holding=await db.prepare('SELECT ticker FROM portfolio WHERE user_id=? AND ticker=? AND shares>0').get(req.user.id,ticker);
+ if(!holding)return res.status(404).json({success:false,error:'Select a stock from your portfolio.'});
+ if(budget===null)await db.prepare('DELETE FROM stock_sip_budgets WHERE user_id=? AND ticker=?').run(req.user.id,ticker);
+ else await db.prepare('INSERT INTO stock_sip_budgets(user_id,ticker,max_budget) VALUES (?,?,?) ON CONFLICT(user_id,ticker) DO UPDATE SET max_budget=excluded.max_budget').run(req.user.id,ticker,budget);
+ res.json({success:true});
+ }catch(e){res.status(500).json({success:false,error:e.message});}
+});
 app.get("/api/sip-config", auth, async (req,res)=>{ const cfg=await getOrSeedSIP(req.user.id); res.json({success:true,data:{...cfg,levels:JSON.parse(cfg.levels)}}); });
 app.put("/api/sip-config", auth, async (req,res)=>{
   let config;

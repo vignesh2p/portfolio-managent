@@ -1,0 +1,41 @@
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const {createClient}=require('@libsql/client');
+const {schema,createWatchlists}=require('../named-watchlists');
+test('default migration, three-list limit, membership, validation and account isolation',async()=>{
+ const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+ const filename=path.join(os.tmpdir(),'onepiece-lists-'+require('node:crypto').randomUUID()+'.db');
+ const client=createClient({url:require('node:url').pathToFileURL(filename).href});
+ try{
+ await client.executeMultiple(`CREATE TABLE users(id INTEGER PRIMARY KEY);INSERT INTO users VALUES(1),(2),(99);CREATE TABLE watchlist(user_id INTEGER,ticker TEXT,name TEXT);INSERT INTO watchlist VALUES(99,'NSE:A','A'),(99,'NSE:B','B');`);
+ await client.execute('ALTER TABLE watchlist ADD COLUMN in_default_watchlist INTEGER NOT NULL DEFAULT 1');
+ for(const sql of schema)await client.execute(sql);
+ const db={prepare:sql=>({all:async(...args)=>(await client.execute({sql,args})).rows,run:async(...args)=>client.execute({sql,args})})};
+ const transactionRaw=async fn=>{const tx=await client.transaction('write');try{const r=await fn(tx);await tx.commit();return r;}catch(e){await tx.rollback();throw e;}finally{tx.close();}};
+ const service=createWatchlists({db,transactionRaw,systemId:async()=>99});
+ const first=await service.lists(1);assert.equal(first.length,1);assert.equal(first[0].name,'Default watchlist');assert.equal((await service.stocks(1)).length,2);
+ const second=await service.save(1,null,{name:'Growth',tickers:['NSE:A','NSE:A']});
+ assert.equal((await service.stocks(1,second.id)).length,1);
+ await service.save(1,null,{name:'Value',tickers:[]});
+ await assert.rejects(service.save(1,null,{name:'Fourth',tickers:[]}),/maximum of 3/);
+ await assert.rejects(service.save(1,second.id,{name:'Value',tickers:[]}),/different/);
+ await assert.rejects(service.save(2,second.id,{name:'Stolen',tickers:[]}),/not found/);
+ await assert.rejects(service.stocks(2,second.id),/not found/);
+ await assert.rejects(service.save(2,null,{name:'Bad',tickers:['UNKNOWN']}),/stock universe/);
+ await assert.rejects(service.save(1,first[0].id,{name:'My default',tickers:['NSE:B']}),/cannot be edited/);
+ await service.save(1,second.id,{name:'Growth renamed',tickers:['NSE:B']});
+ assert.equal((await service.stocks(1,second.id))[0].ticker,'NSE:B');
+ assert.equal((await service.lists(1)).length,3);assert.equal((await service.stocks(1)).length,2);assert.equal((await service.lists(1))[0].name,'Default watchlist');
+ await client.execute("UPDATE user_watchlists SET all_stocks=0 WHERE slot=1");
+ await client.execute("UPDATE watchlist SET in_default_watchlist=0 WHERE ticker='NSE:B'");
+ assert.equal((await service.stocks(1)).length,1);assert.equal((await service.stocks(2)).length,1);
+ assert.equal((await service.stocks(1,second.id))[0].ticker,'NSE:B');
+ await client.execute("UPDATE watchlist SET in_default_watchlist=1 WHERE ticker='NSE:B'");
+ assert.equal((await service.stocks(1)).length,2);
+ const routes={};service.register({get(){},post(){},put(){},delete:(url,auth,handler)=>routes.delete=handler},()=>{});
+ let response;const res={set(){return this},status(){return this},json(v){response=v}};
+ await routes.delete({user:{id:2},params:{id:second.id}},res);assert.equal(response.success,false);
+ await routes.delete({user:{id:1},params:{id:second.id}},res);assert.equal(response.success,true);assert.equal((await service.lists(1)).length,2);
+ await routes.delete({user:{id:1},params:{id:first[0].id}},res);assert.equal(response.success,false);
+ }finally{client.close();try{fs.rmSync(filename,{force:true});}catch(e){if(e.code!=='EPERM')throw e;}}
+});

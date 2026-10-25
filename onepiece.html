@@ -341,21 +341,44 @@ input,button,select{font-family:'DM Mono',monospace}
 .allocation-table td+td{padding-left:12px;white-space:nowrap}
 .allocation-swatch{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:8px}
 @media(max-width:760px){.allocation-layout{grid-template-columns:minmax(0,1fr);gap:24px}.allocation-pie{max-width:320px;margin:auto}.allocation-card{padding:16px}}
-</style>
+.watchlist-controls{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:16px 0}.watchlist-controls select{width:auto;max-width:100%}#watchlist-editor{padding:16px;border:1px solid #555;margin:16px 0}#watchlist-editor>label{display:block;margin-top:12px}#watchlist-choices{max-height:320px;overflow:auto}#watchlist-choices label{display:flex;gap:10px;align-items:center;min-height:48px}#watchlist-choices label[hidden]{display:none}#watchlist-message{margin:12px 0}#opportunity-watchlist-controls{margin:16px 0}#opportunity-watchlist-controls select{max-width:360px}</style>
 <link rel="stylesheet" href="/responsive.css">
 <script src="/responsive.js" defer></script>
+<script src="/rebalancing-ui.js" defer></script>
+<script src="/user-activity-client.js" defer></script>
 <script src="/sip-config-validation.js"></script>
+<script src="/xirr-eligibility.js"></script>
 </head>
 <body>
 <a class="skip-link" href="#main-content">Skip to content</a>
 
 <!-- AUTH -->
 <div id="auth-screen">
+  <div class="auth-card">
+    <div class="auth-logo"><div class="auth-logo-icon">?</div><div><div class="auth-logo-title">ONEPIECE</div><div style="font-size:10px;letter-spacing:3px;color:rgba(255,255,255,.3);text-transform:uppercase">Portfolio Manager</div></div></div>
+    <div class="auth-tabs">
+      <button class="auth-tab active" onclick="showAuthTab('login',this)">Sign In</button>
+      <button class="auth-tab" onclick="showAuthTab('signup',this)">Sign Up</button>
+    </div>
+    <div id="auth-login"><div class="auth-form">
+      <div class="auth-field"><label>Email</label><input id="login-email" class="auth-input" type="email" placeholder="you@example.com"/></div>
+      <div class="auth-field"><label>Password</label><input id="login-password" class="auth-input" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"/></div>
+      <div id="login-msg" class="auth-msg err"></div>
+      <button class="auth-submit" id="login-btn" onclick="doLogin()">Sign In ?</button>
+    </div></div>
+    <div id="auth-signup" style="display:none"><div class="auth-form">
+      <div class="auth-field"><label>Name (optional)</label><input id="signup-name" class="auth-input" placeholder="Your name"/></div>
+      <div class="auth-field"><label>Email</label><input id="signup-email" class="auth-input" type="email" placeholder="you@example.com"/></div>
+      <div class="auth-field"><label>Password <span style="color:rgba(255,255,255,.3);font-size:10px">(min 6 chars)</span></label><input id="signup-password" class="auth-input" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doSignup()"/></div>
+      <div id="signup-msg" class="auth-msg err"></div>
+      <button class="auth-submit" id="signup-btn" onclick="doSignup()">Create Account ?</button>
+    </div></div>
+  </div>
   <div class="public-shell">
     <div class="public-hero">
       <div class="public-kicker">Public Pages</div>
-      <div class="public-title">Explore OnePiece without logging in</div>
-      <p class="public-sub">In <em>One Piece</em>, <strong>freedom is portrayed as the ultimate wealth.</strong></p>
+      <div class="public-title">Gol D. Roger</div>
+      <p class="public-sub">Wealth, fame, power. Gold Roger, the King of the Pirates, attained this and everything else the world had to offer, and his dying words drove countless men to the seas: 'You want my treasure? You can have it. I left everything I gathered together in one place, now you just have to find it!</p>
       <div class="public-sub">You can browse the product overview, how it works, FAQ, and security notes before signing in. Your portfolio, trades, and settings stay protected behind login.</div>
       <div class="public-nav">
         <button class="public-tab active" onclick="showPublicPage('overview', this)">Overview</button>
@@ -397,26 +420,7 @@ input,button,select{font-family:'DM Mono',monospace}
       </div>
     </div>
   </div>
-  <div class="auth-card">
-    <div class="auth-logo"><div class="auth-logo-icon">?</div><div><div class="auth-logo-title">ONEPIECE</div><div style="font-size:10px;letter-spacing:3px;color:rgba(255,255,255,.3);text-transform:uppercase">Portfolio Manager</div></div></div>
-    <div class="auth-tabs">
-      <button class="auth-tab active" onclick="showAuthTab('login',this)">Sign In</button>
-      <button class="auth-tab" onclick="showAuthTab('signup',this)">Sign Up</button>
-    </div>
-    <div id="auth-login"><div class="auth-form">
-      <div class="auth-field"><label>Email</label><input id="login-email" class="auth-input" type="email" placeholder="you@example.com"/></div>
-      <div class="auth-field"><label>Password</label><input id="login-password" class="auth-input" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"/></div>
-      <div id="login-msg" class="auth-msg err"></div>
-      <button class="auth-submit" id="login-btn" onclick="doLogin()">Sign In ?</button>
-    </div></div>
-    <div id="auth-signup" style="display:none"><div class="auth-form">
-      <div class="auth-field"><label>Name (optional)</label><input id="signup-name" class="auth-input" placeholder="Your name"/></div>
-      <div class="auth-field"><label>Email</label><input id="signup-email" class="auth-input" type="email" placeholder="you@example.com"/></div>
-      <div class="auth-field"><label>Password <span style="color:rgba(255,255,255,.3);font-size:10px">(min 6 chars)</span></label><input id="signup-password" class="auth-input" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doSignup()"/></div>
-      <div id="signup-msg" class="auth-msg err"></div>
-      <button class="auth-submit" id="signup-btn" onclick="doSignup()">Create Account ?</button>
-    </div></div>
-  </div>
+
 </div>
 
 <!-- APP -->
@@ -430,8 +434,7 @@ input,button,select{font-family:'DM Mono',monospace}
       <div class="sidebar-section">
         <div class="sidebar-kicker">Navigation</div>
         <div class="sidebar-nav">
-          <button class="tab side-tab active" onclick="switchTab('sip',this)">SIP Strategy</button>
-          <button class="tab side-tab" onclick="switchTab('portfolio',this)">Portfolio</button>
+          <button class="tab side-tab active" onclick="switchTab('portfolio',this)">Portfolio</button>
           <button class="tab side-tab" onclick="switchTab('opportunities',this)">Opportunities</button>
           <button class="tab side-tab" onclick="switchTab('watchlist',this)">Watchlist</button>
           <button class="tab side-tab" onclick="switchTab('trades',this)">Trades</button>
@@ -445,24 +448,7 @@ input,button,select{font-family:'DM Mono',monospace}
     </aside>
 
     <main class="container" id="main-content" tabindex="-1">
-
-    <!-- SIP TAB -->
-    <div id="tab-sip" class="page active">
-      <div class="page-title">SIP Dip Strategy</div>
-      <div class="page-sub">Deploy capital systematically as stocks fall from their all-time highs</div>
-      <div class="stat-grid">
-        <div class="stat-card"><div class="stat-label">Max Budget</div><div class="stat-value" id="sip-budget-display" style="color:#00ffb4">?50,000</div></div>
-        <div class="stat-card"><div class="stat-label">Strategy Levels</div><div class="stat-value" style="color:#00bfff">7</div></div>
-        <div class="stat-card"><div class="stat-label">Max per Level</div><div class="stat-value" style="color:#ff9f43">30%</div></div>
-      </div>
-      <div class="search-row">
-        <input id="ticker-input" class="search-input" placeholder="Enter NSE symbol — RELIANCE, TCS, INFY…" maxlength="20" onkeydown="if(event.key==='Enter')doSIPSearch()"/>
-        <button class="search-btn" id="sip-btn" onclick="doSIPSearch()">Analyse ?</button>
-      </div>
-      <div id="sip-error" class="error-box" style="display:none"></div>
-      <div id="sip-result"></div>
-      <div id="sip-empty" class="empty-state"><div class="empty-icon">??</div><div style="font-size:13px;letter-spacing:1px">Search a stock to see your SIP dip strategy</div></div>
-    </div>
+    <div id="price-cache-status" class="page-sub" role="status" aria-live="polite"></div>
 
     <div id="tab-opportunities" class="page">
       <div class="page-title">Portfolio Opportunities</div>
@@ -471,14 +457,15 @@ input,button,select{font-family:'DM Mono',monospace}
         <button type="button" id="opportunity-tab-portfolio" class="portfolio-tab active" onclick="loadOpportunityScope('portfolio')">Portfolio</button>
         <button type="button" id="opportunity-tab-watchlist" class="portfolio-tab" onclick="loadOpportunityScope('watchlist')">Watchlist</button>
       </div>
-      <div id="opportunity-table"></div>
+      <div id="opportunity-watchlist-controls" hidden><label for="opportunity-watchlist-select">Watchlist</label><select id="opportunity-watchlist-select" class="form-input" onchange="loadOpportunityScope('watchlist')"></select></div><div id="opportunity-table"></div>
     </div>
 
     <!-- PORTFOLIO TAB -->
-    <div id="tab-portfolio" class="page">
+    <div id="tab-portfolio" class="page active">
       <div class="portfolio-tabs" role="tablist" aria-label="Portfolio views">
         <button type="button" id="portfolio-tab-holdings" class="portfolio-tab active" role="tab" aria-selected="true" aria-controls="portfolio-holdings" onclick="switchPortfolioView('holdings')" onkeydown="onPortfolioTabKey(event,'holdings')">My Portfolio</button>
         <button type="button" id="portfolio-tab-allocation" class="portfolio-tab" role="tab" aria-selected="false" aria-controls="portfolio-allocation" tabindex="-1" onclick="switchPortfolioView('allocation')" onkeydown="onPortfolioTabKey(event,'allocation')">Allocation</button>
+        <button type="button" id="portfolio-tab-rebalancing" class="portfolio-tab" role="tab" aria-selected="false" aria-controls="portfolio-rebalancing" tabindex="-1" onclick="switchPortfolioView('rebalancing')" onkeydown="onPortfolioTabKey(event,'rebalancing')">Rebalance Losers</button>
       </div>
       <div id="portfolio-holdings" role="tabpanel" aria-labelledby="portfolio-tab-holdings">
       <div class="page-title">My Portfolio</div>
@@ -511,19 +498,26 @@ input,button,select{font-family:'DM Mono',monospace}
         </div>
         <div id="allocation-content" aria-live="polite"></div>
       </div>
+      <div id="portfolio-rebalancing" role="tabpanel" aria-labelledby="portfolio-tab-rebalancing" hidden>
+        <div class="page-title">Rebalance Losers</div>
+        <p class="page-sub">Holdings whose ATH was more than 365 days ago. Explore replacement stocks using the holding’s current market value, grouped by SIP level and ordered by fewest days since ATH.</p>
+        <p id="rebalance-message" role="status"></p>
+        <div id="rebalance-table"></div>
+      </div>
     </div>
 
     <!-- WATCHLIST TAB -->
     <div id="tab-watchlist" class="page">
       <div class="page-title">Watchlist</div>
-      <div class="page-sub">Prices and all-time highs refresh from Google Sheets once when you open this page or click Refresh.</div>
+      <div class="page-sub">Prices, ATH and ATH dates use a shared 30-minute Yahoo Finance cache. Login refreshes the stock universe; page navigation reads saved prices.</div>
       <div class="sheet-toolbar">
         <div id="watchlist-meta" class="sheet-meta">Ready to load.</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button id="watchlist-refresh-btn" class="preview-btn" onclick="loadWatchlistTable()">Refresh</button>
         </div>
       </div>
-      <div id="watchlist-table"></div>
+      <div class="watchlist-controls"><label for="watchlist-select">Watchlist</label><select id="watchlist-select" class="form-input" onchange="showSelectedWatchlist()"></select><button type="button" class="preview-btn" onclick="openWatchlistEditor(false)">Create watchlist</button><button type="button" class="preview-btn" id="edit-watchlist-button" onclick="openWatchlistEditor(true)">Edit watchlist</button><button type="button" class="preview-btn" id="delete-watchlist-button" onclick="deleteWatchlist()">Delete watchlist</button></div>
+      <form id="watchlist-editor" hidden onsubmit="saveWatchlist(event)"><label for="watchlist-name">Watchlist name</label><input id="watchlist-name" name="name" class="form-input" required maxlength="60"><label for="watchlist-search">Search stocks by name, ticker or CODE</label><input id="watchlist-search" name="search" class="form-input" type="search" maxlength="80" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="stock-search-results" oninput="filterWatchlistChoices()" onkeydown="stockSearchKeydown(event)"><p id="stock-search-status" role="status" aria-live="polite"></p><div id="stock-search-results" role="listbox" aria-label="Stock suggestions"></div><fieldset><legend>Selected and saved stocks</legend><div id="watchlist-choices"></div></fieldset><button class="save-btn" type="submit">Save watchlist</button><button class="preview-btn" type="button" onclick="closeStockSuggestions();document.getElementById('watchlist-editor').hidden=true">Cancel</button></form><div id="watchlist-message" role="status" aria-live="polite"></div><div id="watchlist-table"></div>
     </div>
 
     <!-- TRADES TAB -->
@@ -585,36 +579,38 @@ input,button,select{font-family:'DM Mono',monospace}
     <!-- SETTINGS TAB -->
     <div id="tab-settings" class="page">
       <div class="page-title">Settings</div>
-      <div class="page-sub">Manage your strategy and portfolio stock codes</div>
-      <div class="settings-tabs" role="tablist" aria-label="Settings">
-        <button id="settings-strategy-tab" role="tab" aria-selected="true" aria-controls="settings-strategy" onclick="switchSettingsTab('strategy')">Sipping Config</button>
-        <button id="settings-stocks-tab" role="tab" aria-selected="false" aria-controls="settings-stocks" onclick="switchSettingsTab('stocks')">Stocks Config</button>
-      </div>
-      <div id="settings-strategy" role="tabpanel" aria-labelledby="settings-strategy-tab">
+      <div class="page-sub">Manage your SIP strategy</div>
+
+      <div id="settings-strategy" >
       <form id="sip-config-form" action="/api/sip-config" method="post" onsubmit="event.preventDefault();saveSIPConfig()">
       <div class="settings-card">
-        <label class="settings-label" for="set-budget">Max SIP Budget (₹)</label>
+        <label class="settings-label" for="set-budget">Allocation per stock</label>
         <input id="set-budget" name="max_budget" class="settings-input" type="number" min="0.01" step="any" required value="50000" oninput="updateSIPTotals()"/>
-        <div class="settings-hint">Amounts scale proportionally across all 7 levels</div>
+        <div class="settings-hint">Amounts scale proportionally across your configured levels</div>
       </div>
       <div class="settings-card">
         <div class="settings-label" style="display:block;margin-bottom:16px">Strategy Breakdown</div>
-        <div id="settings-breakdown"></div>
-        <p class="settings-hint" id="sip-config-hint">Enter seven negative fall percentages, from smallest drop to largest. Allocations must total 100%.</p>
+        <div id="settings-breakdown" style="overflow-x:auto"></div>
+        <button type="button" id="add-sip-level" class="preview-btn" onclick="addSIPLevel()">Add level</button>
+        <p class="settings-hint" id="sip-config-hint">Add or remove levels as needed. Enter negative fall percentages from smallest drop to largest, without duplicates. Allocations must total 100%. Each zone ends where the next begins; the final zone includes all deeper drops.</p>
         <p id="sip-allocation-total" role="status" style="margin-top:12px"></p>
         <button class="save-btn" id="save-sip-config" type="submit">Save Config</button>
       </div>
       <div id="settings-msg" role="alert" tabindex="-1" style="font-size:12px;color:#00ffb4;margin-top:10px;display:none"></div>
       </form>
       </div>
-      <div id="settings-stocks" role="tabpanel" aria-labelledby="settings-stocks-tab" hidden>
-        <div class="settings-card">
-          <p>Edit Stock Code or CODE to update the holding and all matching transactions. Save each row before exporting.</p>
-          <button type="button" id="export-settings-stocks" class="preview-btn" style="margin-top:16px" onclick="exportSettingsStocks()" disabled>Export Stocks CSV</button>
-          <div id="settings-stocks-msg" role="status" style="margin:12px 0"></div>
-          <div id="settings-stocks-table" style="overflow-x:auto"></div>
-        </div>
-      </div>
+      <form class="settings-card" id="stock-budget-form" onsubmit="event.preventDefault();saveStockBudget(false)">
+        <label for="stock-budget-select" class="settings-label">Stock allocation override</label>
+        <select id="stock-budget-select" class="form-input" required onchange="showStockBudget()"></select>
+        <label for="stock-budget-amount" class="settings-label">Allocation per stock</label>
+        <input id="stock-budget-amount" class="settings-input" type="number" min="0.01" step="any" required>
+        <p class="settings-hint">Overrides the default budget for this stock in both Opportunities tabs. Your allocation percentages stay the same.</p>
+        <button class="save-btn" type="submit">Save stock budget</button>
+        <button class="preview-btn" type="button" onclick="saveStockBudget(true)">Use default budget</button>
+        <p id="stock-budget-message" role="status" aria-live="polite"></p>
+      </form>
+
+
     </div>
 
     </main>
@@ -722,13 +718,21 @@ let tradeStockTickerByLabel = new Map();
 const fmt  = n => new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:0}).format(n);
 const fmtD = n => new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:2}).format(n);
 
+let priceCacheReady=null,priceCacheTimer=null,accountUnavailable=false;
 async function api(path, opts={}) {
+  if(priceCacheReady&&path!=='/api/prices/refresh')await priceCacheReady;
+  if(accountUnavailable)return {success:false,error:'Tech error please reach admin.'};
   const headers={'Content-Type':'application/json',...(TOKEN?{Authorization:`Bearer ${TOKEN}`}:{})};
   const r=await fetch(BASE+path,{headers,...opts});
   const text=await r.text();
   let j;
   try { j=text?JSON.parse(text):{}; }
   catch { j={ success:false, error:(text||`HTTP ${r.status}`).slice(0,220) }; }
+  if(j.code==='ACCOUNT_UNAVAILABLE'){
+    accountUnavailable=true;TOKEN=null;USERINFO=null;localStorage.removeItem('pf_token');localStorage.removeItem('pf_user');clearInterval(priceCacheTimer);
+    document.getElementById('app-screen').style.display='none';document.getElementById('auth-screen').style.removeProperty('display');
+    showAuthTab('login');setAuthMsg('login-msg',j.error);return j;
+  }
   if(r.status===401){doLogout();return j;}
   if(!j.success && !j.error) j.error=`HTTP ${r.status}`;
   return j;
@@ -783,6 +787,7 @@ async function doLogin(){
   saveSession(j.token,j.user);
 }
 function saveSession(token, user){
+  accountUnavailable=false;
   TOKEN = token;
   USERINFO = user;
   localStorage.setItem('pf_token', token);
@@ -815,7 +820,8 @@ async function doSignup(){
   const j=await fetch(BASE+'/api/auth/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,password})}).then(r=>r.json()).catch(()=>({success:false,error:'Cannot reach server'}));
   btn.disabled=false; btn.textContent='Create Account ?';
   if(!j.success) return setAuthMsg('signup-msg',j.error);
-  saveSession(j.token,j.user);
+  setAuthMsg('signup-msg',j.message||'Please wait for admin approval.',true);
+  document.getElementById('signup-password').value='';
 }
 async function doAdminLogin(){
   const email=document.getElementById('admin-email').value.trim();
@@ -833,7 +839,19 @@ function showApp(){
   document.getElementById('app-screen').style.display='block';
   document.getElementById('user-email-display').textContent=USERINFO?.name||USERINFO?.email||'';
   document.getElementById('t-date').value=new Date().toISOString().substring(0,10);
+  warmSessionPrices();
+  if(priceCacheTimer)clearInterval(priceCacheTimer);
+  priceCacheTimer=setInterval(()=>{if(TOKEN)warmSessionPrices();},30*60*1000);
   loadSettings();
+  switchTab('portfolio',document.querySelector(".side-tab[onclick*=portfolio]"));
+}
+function warmSessionPrices(){
+  const status=document.getElementById('price-cache-status');
+  if(status)status.textContent='Checking the shared 30-minute price cache…';
+  priceCacheReady=api('/api/prices/refresh',{method:'POST'}).then(result=>{
+    if(status)status.textContent=!result.success?'Price refresh unavailable. Showing previously cached quotes.':result.summary?.refreshing?'A shared price refresh is in progress.':result.summary?.failed?`Shared prices ready. ${result.summary.failed} stocks could not be refreshed.`:'Prices use the shared 30-minute Yahoo cache.';
+  }).catch(()=>{if(status)status.textContent='Price refresh unavailable. Showing previously cached quotes.';});
+  return priceCacheReady;
 }
 function showAdminApp(){
   window.location.replace('/admin');
@@ -1067,28 +1085,45 @@ function switchTab(name,el){
   if(name==='settings')  loadSettings();
 }
 
+function daysSinceAth(value, now = new Date()){
+  if(typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const ath = Date.parse(value + 'T00:00:00Z');
+  if(!Number.isFinite(ath) || new Date(ath).toISOString().slice(0,10) !== value) return null;
+  const parts = new Intl.DateTimeFormat('en-US', {timeZone:'Asia/Kolkata', year:'numeric', month:'2-digit', day:'2-digit'}).formatToParts(now);
+  const part = type => parts.find(p => p.type === type).value;
+  const today = Date.parse(`${part('year')}-${part('month')}-${part('day')}T00:00:00Z`);
+  const days = Math.round((today - ath) / 86400000);
+  return days >= 0 ? days : null;
+}
+function sortByDaysSinceAth(rows){
+  const now = new Date();
+  return rows.map(row => ({...row, days_since:daysSinceAth(row.ath_date, now)}))
+    .sort((a,b) => (a.days_since ?? Number.MAX_SAFE_INTEGER) - (b.days_since ?? Number.MAX_SAFE_INTEGER));
+}
+
 function renderWatchlistTable(rows){
   const target = document.getElementById('watchlist-table');
   const meta = document.getElementById('watchlist-meta');
   if(!target || !meta) return;
 
-  const data = Array.isArray(rows) ? rows : [];
+  const data = sortByDaysSinceAth(Array.isArray(rows) ? rows : []);
   if(!data.length){
     target.innerHTML = '<div class="no-trigger-box">No watchlist data has been saved yet.</div>';
     meta.textContent = '0 rows loaded';
     return;
   }
 
-  const headers = ['ticker','code','stock_code','name','cmp','change','ath','ath_date','pe','source','price_as_of','quote_fetched_at','quote_error','updated_at'];
+  const headers = ['ticker','code','stock_code','name','cmp','change','ath','ath_date','days_since','pe','source','price_as_of','quote_fetched_at','quote_error','updated_at'];
   const labels = {
     ticker:'Ticker',
     code:'Code',
     stock_code:'Stock Code',
     name:'Name',
     cmp:'CMP',
-    change:'Change',
+    change:'Drop %',
     ath:'All Time High',
     ath_date:'All Time High Date',
+    days_since:'Days Since',
     price_as_of:'Price As Of',
     quote_fetched_at:'Quote Fetched At',
     quote_error:'Quote Error',
@@ -1096,9 +1131,9 @@ function renderWatchlistTable(rows){
     source:'Source',
     updated_at:'Updated At',
   };
-  const headHtml = headers.map(h => `<th>${labels[h]}</th>`).join('');
+  const headHtml = headers.map(h => `<th scope="col"${h==='days_since'?' aria-sort="ascending" title="Days since ATH, lowest first"':''}>${labels[h]}</th>`).join('');
   const bodyHtml = data.map((row, rowIdx) => {
-    const cells = headers.map((h) => `<td>${escapeHtml(row?.[h] ?? '')}</td>`).join('');
+    const cells = headers.map((h) => `<td>${escapeHtml(row?.[h] ?? (h==='days_since'?'—':''))}</td>`).join('');
     return `<tr><td class="sheet-rownum">${rowIdx + 1}</td>${cells}</tr>`;
   }).join('');
 
@@ -1121,34 +1156,153 @@ async function loadWatchlistTable(){
   const target = document.getElementById('watchlist-table');
   const meta = document.getElementById('watchlist-meta');
   if(!target || !meta) return;
-  target.innerHTML = '<div class="loading-row"><span class="spinner"></span>Refreshing watchlist from Google Sheets…</div>';
-  meta.textContent = 'Refreshing from Google Sheets…';
+  target.innerHTML = '<div class="loading-row"><span class="spinner"></span>Loading cached watchlist prices…</div>';
+  meta.textContent = 'Loading cached Yahoo Finance prices…';
   let j;
-  try { j = await api('/api/watchlist/sync', {method:'POST'}); }
-  catch(error) { j = {success:false,error:error.message||'Unable to refresh from Google Sheets'}; }
+  try { j = await api('/api/watchlist/table'); }
+  catch(error) { j = {success:false,error:error.message||'Unable to refresh prices'}; }
   if(!j.success){
     target.innerHTML = `<div class="error-box">${escapeHtml(j.error || 'Failed to load watchlist table')}</div>`;
     meta.textContent = 'Load failed';
     return;
   }
-  renderWatchlistTable(j.data);
+  try { await refreshWatchlistChoices(); await showSelectedWatchlist(); } catch(error) { target.textContent=error.message; }
 }
 
 
+
+let userWatchlists=[],editingWatchlistId=null,watchlistRenderVersion=0;
+async function refreshWatchlistChoices(){
+  const response=await api('/api/watchlists');if(!response.success)throw new Error(response.error);
+  userWatchlists=response.data;
+  for(const id of ['watchlist-select','opportunity-watchlist-select']){
+    const select=document.getElementById(id),previous=select.value;
+    select.replaceChildren(...userWatchlists.map(list=>new Option(list.name,list.id)));
+    if(userWatchlists.some(list=>String(list.id)===previous))select.value=previous;
+  }
+}
+async function showSelectedWatchlist(){
+  const selected=userWatchlists.find(list=>String(list.id)===document.getElementById('watchlist-select').value);
+  const locked=!selected||Number(selected.slot)===1;
+  document.getElementById('edit-watchlist-button').disabled=locked;
+  document.getElementById('delete-watchlist-button').disabled=locked;
+  document.getElementById('watchlist-editor').hidden=true;
+  const version=++watchlistRenderVersion;
+  const response=await api('/api/watchlists/'+document.getElementById('watchlist-select').value+'/stocks');
+  if(version!==watchlistRenderVersion)return;
+  if(!response.success){document.getElementById('watchlist-table').textContent=response.error;return;}
+  renderWatchlistTable(response.data);
+}
+async function openWatchlistEditor(edit){
+  const message=document.getElementById('watchlist-message');message.textContent='';
+  try{
+    if(!edit&&userWatchlists.length>=3)throw new Error('You can create a maximum of 3 watchlists.');
+    editingWatchlistId=edit?document.getElementById('watchlist-select').value:null;
+    if(edit&&Number(userWatchlists.find(l=>String(l.id)===editingWatchlistId)?.slot)===1)throw new Error('The default watchlist cannot be edited or renamed.');
+    const universe=await api('/api/stocks/universe');if(!universe.success)throw new Error(universe.error);
+    const current=edit?await api('/api/watchlists/'+editingWatchlistId+'/stocks'):{success:true,data:[]};if(!current.success)throw new Error(current.error);
+    const selected=new Set(current.data.map(s=>s.ticker));
+    document.getElementById('watchlist-name').value=edit?userWatchlists.find(l=>String(l.id)===editingWatchlistId).name:'';
+    document.getElementById('watchlist-search').value='';
+    closeStockSuggestions();document.getElementById('stock-search-status').textContent='Type a company name or symbol. Stocks not found locally are searched on Yahoo automatically. Save your watchlist to add new stocks to the OnePiece universe.';
+    const choices=document.getElementById('watchlist-choices');choices.replaceChildren();
+    for(const stock of universe.data){const label=document.createElement('label'),input=document.createElement('input');input.type='checkbox';input.name='ticker';input.value=stock.ticker;input.checked=selected.has(stock.ticker);label.append(input,document.createTextNode(' '+stock.name+' | '+stock.ticker+' | '+(stock.code||'—')+' | '+(stock.yahoo_finance_code||'')));choices.append(label);}
+    document.getElementById('watchlist-editor').hidden=false;document.getElementById('watchlist-name').focus();
+  }catch(error){message.textContent=error.message;}
+}
+let stockSearchVersion=0,stockSearchTimer,stockSuggestionIndex=-1;
+function closeStockSuggestions(){
+ clearTimeout(stockSearchTimer);stockSearchVersion++;stockSuggestionIndex=-1;
+ document.getElementById('stock-search-results').replaceChildren();
+ const input=document.getElementById('watchlist-search');input.setAttribute('aria-expanded','false');input.removeAttribute('aria-activedescendant');
+}
+function showStockSuggestions(rows){
+ const results=document.getElementById('stock-search-results'),search=document.getElementById('watchlist-search');results.replaceChildren();stockSuggestionIndex=-1;
+ rows.forEach((stock,index)=>{
+  const option=document.createElement('div');option.id='stock-suggestion-'+index;option.setAttribute('role','option');option.setAttribute('aria-selected','false');option.className='stock-suggestion';
+  option.textContent=stock.name+' | '+stock.symbol+(stock.local?' | Saved stock':' | Yahoo');
+  option.addEventListener('mousedown',e=>e.preventDefault());
+  option.addEventListener('click',()=>{
+   const choices=document.getElementById('watchlist-choices');let input=stock.local;
+   if(!input){input=[...choices.querySelectorAll('input')].find(x=>x.value===stock.symbol);}
+   if(!input){const label=document.createElement('label');input=document.createElement('input');input.type='checkbox';input.name='discovered';input.value=stock.symbol;input.dataset.discovered='true';label.append(input,document.createTextNode(' '+stock.name+' | '+stock.symbol));choices.prepend(label);}
+   input.checked=true;input.parentElement.hidden=false;search.value='';closeStockSuggestions();
+   choices.querySelectorAll('label').forEach(label=>label.hidden=false);
+   document.getElementById('stock-search-status').textContent=stock.name+' selected. Save the watchlist to keep it.';search.focus();
+  });results.append(option);
+ });search.setAttribute('aria-expanded',String(rows.length>0));search.removeAttribute('aria-activedescendant');
+}
+function stockSearchKeydown(event){
+ if(event.isComposing)return;
+ const options=[...document.querySelectorAll('#stock-search-results [role="option"]')];
+ if(event.key==='Escape'||event.key==='Tab'){closeStockSuggestions();return;}
+ if(event.key==='Enter'){event.preventDefault();if(options.length)options[Math.max(0,stockSuggestionIndex)].click();return;}
+ if(!options.length||!['ArrowDown','ArrowUp'].includes(event.key))return;
+ event.preventDefault();stockSuggestionIndex=(stockSuggestionIndex+(event.key==='ArrowDown'?1:-1)+options.length)%options.length;
+ options.forEach((option,i)=>option.setAttribute('aria-selected',String(i===stockSuggestionIndex)));
+ document.getElementById('watchlist-search').setAttribute('aria-activedescendant',options[stockSuggestionIndex].id);options[stockSuggestionIndex].scrollIntoView({block:'nearest'});
+}
+async function searchIndianStocks(q,version){
+ const status=document.getElementById('stock-search-status');
+ try{
+  const response=await api('/api/stocks/search?q='+encodeURIComponent(q));
+  if(version!==stockSearchVersion||document.getElementById('watchlist-editor').hidden)return;
+  if(!response.success)throw new Error(response.error);
+  showStockSuggestions(response.data);
+  status.textContent=response.data.length?'Choose a suggestion. New stocks join the OnePiece universe when you save.':'No Indian stocks found. Try an exact symbol ending .NS or .BO.';
+ }catch(error){if(version===stockSearchVersion)status.textContent=error.message;}
+}
+function filterWatchlistChoices(){
+ closeStockSuggestions();const q=document.getElementById('watchlist-search').value.trim().toLowerCase(),status=document.getElementById('stock-search-status');
+ const labels=[...document.querySelectorAll('#watchlist-choices label')];labels.forEach(label=>label.hidden=!!q&&!label.textContent.toLowerCase().includes(q)&&!label.querySelector('input').checked);
+ if(q.length<2){status.textContent='Type at least 2 characters to search.';return;}
+ const matches=labels.filter(label=>label.textContent.toLowerCase().includes(q)).map(label=>({name:label.textContent.trim(),symbol:label.querySelector('input').value,local:label.querySelector('input')}));
+ if(matches.length){showStockSuggestions(matches);status.textContent='Matching stocks from the OnePiece universe.';return;}
+ status.textContent='Searching NSE / BSE on Yahoo…';const version=stockSearchVersion;
+ stockSearchTimer=setTimeout(()=>searchIndianStocks(q,version),350);
+}
+async function saveWatchlist(event){
+  event.preventDefault();const button=event.submitter;button.disabled=true;
+  try{
+    const tickers=[...document.querySelectorAll('#watchlist-choices input:checked')].filter(input=>!input.dataset.discovered).map(input=>input.value);
+    const discovered=[...document.querySelectorAll('#watchlist-choices input:checked')].filter(input=>input.dataset.discovered).map(input=>input.value);
+    const response=await api('/api/watchlists'+(editingWatchlistId?'/'+editingWatchlistId:''),{method:editingWatchlistId?'PUT':'POST',body:JSON.stringify({name:document.getElementById('watchlist-name').value,tickers,discovered})});
+    if(!response.success)throw new Error(response.error);
+    await refreshWatchlistChoices();document.getElementById('watchlist-select').value=response.data.id;await showSelectedWatchlist();document.getElementById('watchlist-editor').hidden=true;document.getElementById('watchlist-message').textContent='Watchlist saved.';
+  }catch(error){document.getElementById('watchlist-message').textContent=error.message;}finally{button.disabled=false;}
+}
+async function deleteWatchlist(){
+  const id=document.getElementById('watchlist-select').value,list=userWatchlists.find(l=>String(l.id)===id);
+  if(list?.slot===1){document.getElementById('watchlist-message').textContent='The default watchlist cannot be deleted.';return;}
+  if(!confirm('Delete this watchlist?'))return;
+  try{const response=await api('/api/watchlists/'+id,{method:'DELETE'});if(!response.success)throw new Error(response.error);await refreshWatchlistChoices();await showSelectedWatchlist();document.getElementById('watchlist-editor').hidden=true;}catch(error){document.getElementById('watchlist-message').textContent=error.message;}
+}
+
 let opportunityRows = [], opportunityScope = 'portfolio';
+function opportunityPriceRange(level,nextLevel){
+  const upper=Number(level.trigger_price);
+  if(!Number.isFinite(upper)||upper<=0)return '—';
+  if(!nextLevel)return fmt(upper)+' & below';
+  const next=Number(nextLevel.trigger_price);
+  const lower=Math.round(next)+1;
+  // Keep whole-rupee display bands separate; exact trade boundaries stay unchanged.
+  if(Math.round(upper)<lower)return fmtD(upper)+' – > '+fmtD(next);
+  return fmt(upper)+' – '+fmt(lower);
+}
 async function loadPortfolioOpportunities(){ return loadOpportunityScope(opportunityScope); }
 async function loadOpportunityScope(scope='portfolio'){
   opportunityScope=scope;
+  document.getElementById('opportunity-watchlist-controls').hidden=scope!=='watchlist';
   document.querySelectorAll('[id^="opportunity-tab-"]').forEach(button=>button.classList.toggle('active',button.id===`opportunity-tab-${scope}`));
   const target=document.getElementById('opportunity-table'); if(!target) return;
-  target.innerHTML='<div class="loading-row"><span class="spinner"></span>Refreshing prices from Google Sheets…</div>';
+  target.innerHTML='<div class="loading-row"><span class="spinner"></span>Loading cached Yahoo Finance prices…</div>';
   let j;
-  try { j=await api(`/api/portfolio-opportunities?scope=${encodeURIComponent(scope)}`); }
-  catch(error) { j={success:false,error:error.message||'Unable to refresh from Google Sheets'}; }
+  try { await refreshWatchlistChoices(); j=await api(`/api/portfolio-opportunities?scope=${encodeURIComponent(scope)}&watchlist_id=${encodeURIComponent(document.getElementById('opportunity-watchlist-select').value)}`); }
+  catch(error) { j={success:false,error:error.message||'Unable to refresh prices'}; }
   if(opportunityScope!==scope)return;
   if(!j.success){target.innerHTML=`<div class="error-box">${escapeHtml(j.error||'Unable to load opportunities')}</div>`;return;}
-  opportunityRows=j.data.rows;
-target.innerHTML=`<div class="sheet-table-wrap"><table class="sheet-table"><thead><tr><th>Stock / CODE</th><th>Price</th><th>ATH</th><th>ATH date</th>${j.data.levels.map(l=>`<th>${l.fall}% zone<br><small>${l.allocation}% allocation</small></th>`).join('')}</tr></thead><tbody>${opportunityRows.map((row,i)=>`<tr><td><b>${escapeHtml(row.name)}</b><br><small>${escapeHtml(row.ok_code||'—')}</small></td><td>${fmt(row.price)}</td><td>${fmt(row.ath)}</td><td>${row.ath_date||'—'}</td>${row.levels.map((level,k)=>`<td class="${level.active?'opportunity-active':''}"><label><input type="checkbox" disabled title="Calculated from buy trades" aria-label="${escapeHtml(row.name)} ${level.fall}% zone" data-op-row="${i}" data-op-level="${k}" ${level.selected?'checked':''}><span>${level.trigger_price>0?fmt(level.trigger_price):'—'}<br><small>${fmt(level.allocated_amount||0)} | ${level.shares_to_buy||0} buy</small>${Number(level.invested_amount)||Number(level.bought_quantity)?`<br><small style="color:#4ade80" title="Total buys in this zone">Invested: ${fmt(level.invested_amount||0)} | ${Number(level.bought_quantity||0).toLocaleString('en-IN',{maximumFractionDigits:8})} bought</small>`: ''}</span></label></td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  opportunityRows=sortByDaysSinceAth(j.data.rows);
+target.innerHTML=`<div class="sheet-table-wrap"><table class="sheet-table"><thead><tr><th>Stock / CODE</th><th>Price</th><th>ATH</th><th>ATH date</th><th scope="col" aria-sort="ascending" title="Days since ATH, lowest first">Days Since</th>${j.data.levels.map(l=>`<th>${l.fall}% zone<br><small>${l.allocation}% allocation</small></th>`).join('')}</tr></thead><tbody>${opportunityRows.map((row,i)=>`<tr><td><b>${escapeHtml(row.name)}</b><br><small>${escapeHtml(row.ok_code||'—')}</small></td><td>${row.price==null?'—':fmt(row.price)}${row.quote_error?'<br><small>'+escapeHtml(row.quote_error)+'</small>':''}</td><td>${row.ath==null?'—':fmt(row.ath)}</td><td>${row.ath_date||'—'}</td><td>${row.days_since ?? '—'}</td>${row.levels.map((level,k)=>`<td class="${level.active?'opportunity-active':''}"><label><input type="checkbox" disabled title="Calculated from buy trades" aria-label="${escapeHtml(row.name)} ${level.fall}% zone" data-op-row="${i}" data-op-level="${k}" ${level.selected?'checked':''}><span title="Rounded display range; trade selection uses exact percentage boundaries">${opportunityPriceRange(level,row.levels[k+1])}<br><small>${fmt(level.allocated_amount||0)} | ${level.shares_to_buy||0} buy</small>${Number(level.invested_amount)||Number(level.bought_quantity)?`<br><small style="color:#4ade80" title="Total buys in this zone">Invested: ${fmt(level.invested_amount||0)} | ${Number(level.bought_quantity||0).toLocaleString('en-IN',{maximumFractionDigits:8})} bought</small>`: ''}</span></label></td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
 
 // -- SIP ----------------------------------
@@ -1166,7 +1320,6 @@ async function doSIPSearch(){
     renderSIP(j.data);
   } catch(e){
     const eb=document.getElementById('sip-error'); eb.style.display='block'; eb.innerHTML=`<b>Error:</b> ${e.message}`;
-    document.getElementById('sip-empty').style.display='block';
   } finally{btn.disabled=false;btn.textContent='Analyse ?';}
 }
 function renderSIP(d){
@@ -1200,7 +1353,7 @@ function renderSIP(d){
 
 // -- PORTFOLIO — async per-stock price loading ---------------------------------
 function switchPortfolioView(view){
-  for(const name of ['holdings','allocation']){
+  for(const name of ['holdings','allocation','rebalancing']){
     const active = name === view;
     const button = document.getElementById('portfolio-tab-'+name);
     button.classList.toggle('active',active);
@@ -1208,12 +1361,14 @@ function switchPortfolioView(view){
     button.tabIndex = active ? 0 : -1;
     document.getElementById('portfolio-'+name).hidden = !active;
   }
+  if(view==='rebalancing')loadRebalancing();
 }
 
 function onPortfolioTabKey(event,view){
   if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
   event.preventDefault();
-  const next = event.key==='Home' ? 'holdings' : event.key==='End' ? 'allocation' : view==='holdings' ? 'allocation' : 'holdings';
+  const tabs=['holdings','allocation','rebalancing'];
+  const next = event.key==='Home'?tabs[0]:event.key==='End'?tabs[2]:tabs[(tabs.indexOf(view)+(event.key==='ArrowRight'?1:2))%3];
   switchPortfolioView(next);
   document.getElementById('portfolio-tab-'+next).focus();
 }
@@ -1318,6 +1473,7 @@ async function loadPortfolio(){
     return;
   }
   portfolioHoldings = j.data.holdings;
+  portfolioXirrEligible=j.data.xirr_eligible===true;
   allocationLoadState = 'ready';
   renderPortfolioAllocation();
 
@@ -1478,7 +1634,7 @@ function updatePortfolioRow(ticker, priceData){
   // XIRR — compute from trades stored in holding
   const xirr = calcXIRR(h.trades||[], cmp);
   const xc   = xirr===null?'xirr-none':xirr>=20?'xirr-good':xirr>=0?'xirr-ok':'xirr-bad';
-  const xl   = xirr===null?'No trades':`${xirr>=0?'+':''}${xirr}% p.a.`;
+  const xl   = xirr===null?(xirrEligible(h.trades||[])?'N/A':'After 1 year'):`${xirr>=0?'+':''}${xirr}% p.a.`;
   const xirrEl=document.getElementById(`ph-xirr-${ticker}`);
   if(xirrEl) xirrEl.innerHTML=`<span class="xirr-pill ${xc}">${xl}</span>`;
 }
@@ -1518,7 +1674,7 @@ function updateSummaryCards(totalCost, pricesLoaded=false){
       const xirr = calcPortfolioXIRR();
       if(xirr===null){
         xirrEl.style.color='rgba(255,255,255,.4)';
-        xirrEl.textContent='—';
+        xirrEl.textContent=portfolioXirrEligible?'—':'After 1 year';
       } else {
         xirrEl.style.color=xirr>=0?'#00ffb4':'#ff6b6b';
         xirrEl.textContent=`${xirr>=0?'+':''}${xirr}% p.a.`;
@@ -1563,19 +1719,23 @@ function xirrFromCashflows(cfs){
 }
 
 function calcXIRR(trades, livePrice){
-  if(!trades?.length) return null;
+  if(!xirrEligible(trades)) return null;
   const cfs=cashflowsFromTrades(trades);
   const rem=trades.reduce((s,t)=>s+(t.type==='BUY'?t.shares:-t.shares),0);
+  if(rem>0.0001 && !(Number.isFinite(livePrice) && livePrice>0)) return null;
   if(rem>0.0001&&livePrice>0) cfs.push({amount:rem*livePrice,date:new Date()});
   return xirrFromCashflows(cfs);
 }
 
+let portfolioXirrEligible=false;
 function calcPortfolioXIRR(){
+  if(!portfolioXirrEligible)return null;
   const cfs=[];
   for(const h of portfolioHoldings){
     cfs.push(...cashflowsFromTrades(h.trades||[]));
     const pd = priceMap[h.ticker];
     const rem=(h.trades||[]).reduce((s,t)=>s+(t.type==='BUY'?t.shares:-t.shares),0);
+    if(rem>0.0001 && !(Number.isFinite(pd?.price) && pd.price>0)) return null;
     if(rem>0.0001 && pd?.price>0) cfs.push({amount:rem*pd.price,date:new Date()});
   }
   return xirrFromCashflows(cfs);
@@ -1612,7 +1772,7 @@ async function showXIRR(ticker){
   }).join('');
   document.getElementById('modal-body').innerHTML=`
     <div style="display:flex;gap:16px;margin-bottom:24px;flex-wrap:wrap">
-      <div class="stat-card" style="flex:1;min-width:140px"><div class="stat-label">XIRR (Annualised)</div><div class="stat-value"><span class="xirr-pill ${xc}" style="font-size:16px">${xp!==null?(xp>=0?'+':'')+xp+'% p.a.':'N/A'}</span></div></div>
+      <div class="stat-card" style="flex:1;min-width:140px"><div class="stat-label">XIRR (Annualised)</div><div class="stat-value"><span class="xirr-pill ${xc}" style="font-size:16px">${xp!==null?(xp>=0?'+':'')+xp+'% p.a.':j.xirr_eligible===false?'After 1 year':'N/A'}</span></div></div>
       <div class="stat-card" style="flex:1;min-width:140px"><div class="stat-label">Live CMP</div><div class="stat-value">${fmt(j.livePrice)}${athDropText}</div></div>
       <div class="stat-card" style="flex:1;min-width:140px"><div class="stat-label">Cost Value</div><div class="stat-value">${fmt(buyCostValue)}</div></div>
       <div class="stat-card" style="flex:1;min-width:140px"><div class="stat-label">Market Value</div><div class="stat-value">${fmt(marketValue)}</div></div>
@@ -1903,85 +2063,57 @@ async function clearAllTrades(){
 }
 
 // -- SETTINGS ------------------------------
-let settingsStocks=[];
-function switchSettingsTab(name){
-  for(const key of ['strategy','stocks']){
-    document.getElementById('settings-'+key).hidden=key!==name;
-    document.getElementById('settings-'+key+'-tab').setAttribute('aria-selected',String(key===name));
-  }
-  if(name==='stocks') loadSettingsStocks();
+let stockBudgetRows=[];
+async function loadStockBudgets(){
+ const result=await api('/api/sip-stock-budgets');
+ const select=document.getElementById('stock-budget-select');
+ if(!result.success){document.getElementById('stock-budget-message').textContent=result.error||'Unable to load stock budgets.';return;}
+ stockBudgetRows=result.data||[];
+ select.replaceChildren(new Option('Select a portfolio stock',''));
+ for(const row of stockBudgetRows)select.add(new Option(row.name+' ('+row.ticker+')'+(row.max_budget!=null?' — '+fmt(row.max_budget):' — default'),row.ticker));
+ showStockBudget();
 }
-async function loadSettingsStocks(){
-  const container=document.getElementById('settings-stocks-table');
-  container.textContent='Loading portfolio stocks…';
-  settingsStocks=[];
-  document.getElementById('export-settings-stocks').disabled=true;
-  try{
-    const j=await api('/api/settings/stocks');
-    if(!j.success) throw new Error(j.error||'Unable to load stocks');
-    settingsStocks=j.data;
-    document.getElementById('export-settings-stocks').disabled=!settingsStocks.length;
-    if(!settingsStocks.length){container.textContent='No stocks in your portfolio yet.';return;}
-    container.innerHTML='<table class="settings-stock-table"><thead><tr><th>Stock Name</th><th>CODE</th><th>Stock Code</th><th></th></tr></thead><tbody>'+settingsStocks.map((s,i)=>`<tr><td>${escapeHtml(s.name)}</td><td><input id="settings-ok-${i}" class="form-input" aria-label="CODE for ${escapeHtml(s.name)}" maxlength="100" value="${escapeHtml(s.ok_code||'')}"/></td><td><input id="settings-stock-${i}" class="form-input" aria-label="Stock code for ${escapeHtml(s.name)}" maxlength="54" value="${escapeHtml(s.stock_code)}"/></td><td><button class="save-btn" onclick="saveSettingsStock(${i},this)">Save</button></td></tr>`).join('')+'</tbody></table>';
-  }catch(err){container.textContent=err.message;}
+function showStockBudget(){
+ const row=stockBudgetRows.find(r=>r.ticker===document.getElementById('stock-budget-select').value);
+ document.getElementById('stock-budget-amount').value=row?.max_budget??document.getElementById('set-budget').value;
 }
-function settingsStocksCsv(stocks){
-  const rows=[['Stock Code','Stock Name','CODE'],...stocks.map(stock=>[stock.stock_code,stock.name,stock.ok_code||''])];
-  return rows.map(row=>row.map(value=>{
-    let text=String(value??'');
-    if(/^[\s]*[=+@-]/.test(text)) text="'"+text;
-    return '"'+text.replace(/"/g,'""')+'"';
-  }).join(',')).join('\r\n');
-}
-function exportSettingsStocks(){
-  if(!settingsStocks.length) return;
-  const blob=new Blob(['\ufeff'+settingsStocksCsv(settingsStocks)],{type:'text/csv;charset=utf-8'});
-  const link=document.createElement('a');
-  const url=URL.createObjectURL(blob);
-  link.href=url;
-  link.download='onepiece-stocks-config-'+new Date().toISOString().slice(0,10)+'.csv';
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),1000);
-}
-async function saveSettingsStock(index,button){
-  const stock=settingsStocks[index];
-  const stockCode=document.getElementById('settings-stock-'+index).value.trim().toUpperCase();
-  const msg=document.getElementById('settings-stocks-msg');
-  const okCode=document.getElementById('settings-ok-'+index).value.trim();
-  if(stockCode===stock.stock_code && okCode===(stock.ok_code||'')){msg.textContent='Stock codes are unchanged.';return;}
-  button.disabled=true;
-  msg.textContent='Saving…';
-  try{
-    const j=await api('/api/settings/stocks/'+stock.id,{method:'PUT',body:JSON.stringify({stock_code:stockCode,ok_code:okCode,expected_stock_code:stock.stock_code,expected_ok_code:stock.ok_code||''})});
-    if(!j.success) throw new Error(j.error||'Unable to save stock configuration');
-    msg.textContent=`Saved ${stockCode}. Portfolio and ${j.data.updatedTrades} trade(s) updated.`;
-    const tickerFilter=document.getElementById('filter-ticker');
-    if(tickerFilter && tickerFilter.value.trim().toUpperCase()===stock.stock_code) tickerFilter.value=stockCode;
-    await loadSettingsStocks();
-    // Reload the views so their filters and per-stock calculations use the new code.
-    await Promise.allSettled([loadPortfolio(),loadTrades()]);
-  }catch(err){msg.textContent=err.message;}
-  finally{button.disabled=false;}
+async function saveStockBudget(reset){
+ const form=document.getElementById('stock-budget-form'),message=document.getElementById('stock-budget-message'),ticker=document.getElementById('stock-budget-select').value;
+ if(!ticker){message.textContent='Select a portfolio stock.';return;}
+ if(!reset&&!form.reportValidity())return;
+ form.querySelectorAll('button').forEach(b=>b.disabled=true);
+ try{const result=await api('/api/sip-stock-budgets/'+encodeURIComponent(ticker),{method:'PUT',body:JSON.stringify({max_budget:reset?null:Number(document.getElementById('stock-budget-amount').value)})});if(!result.success)throw new Error(result.error);await loadStockBudgets();document.getElementById('stock-budget-select').value=ticker;showStockBudget();message.textContent=reset?'Default budget restored.':'Stock budget saved.';}
+ catch(e){message.textContent=e.message;}finally{form.querySelectorAll('button').forEach(b=>b.disabled=false);}
 }
 async function loadSettings(){
-  switchSettingsTab('strategy');
   const j=await api('/api/sip-config'); if(!j.success) return;
   sipLevels=j.data.levels;
   document.getElementById('set-budget').value=j.data.max_budget;
-  document.getElementById('sip-budget-display').textContent=fmt(j.data.max_budget);
   refreshSettingsBreakdown();
+  loadStockBudgets();
 }
 function refreshSettingsBreakdown(){
   if(!sipLevels.length) return;
-  document.getElementById('settings-breakdown').innerHTML=`<table class="sip-config-table"><thead><tr><th scope="col">Fall %</th><th scope="col">Allocation %</th><th scope="col">Amount</th></tr></thead><tbody>${sipLevels.map((l,i)=>`<tr><td><input class="form-input" name="fall_${i}" aria-label="Level ${i+1} fall percent" aria-describedby="sip-config-hint" type="number" min="-99.99" max="-0.01" step="any" required value="${escapeHtml(l.fall)}" oninput="editSIPLevel(${i},'fall',this.value)"></td><td><input class="form-input" name="allocation_${i}" aria-label="Level ${i+1} allocation percent" type="number" min="0" max="100" step="any" required value="${escapeHtml(l.allocation)}" oninput="editSIPLevel(${i},'allocation',this.value)"></td><td id="sip-level-amount-${i}"></td></tr>`).join('')}</tbody></table>`;
+  document.getElementById('settings-breakdown').innerHTML=`<table class="sip-config-table" style="min-width:480px"><thead><tr><th scope="col">Fall %</th><th scope="col">Allocation %</th><th scope="col">Amount</th><th scope="col">Action</th></tr></thead><tbody>${sipLevels.map((l,i)=>`<tr><td><input class="form-input" name="fall_${i}" aria-label="Level ${i+1} fall percent" aria-describedby="sip-config-hint" type="number" min="-100" max="0" step="any" required value="${Number.isFinite(l.fall)?escapeHtml(l.fall):''}" oninput="editSIPLevel(${i},'fall',this.value)"></td><td><input class="form-input" name="allocation_${i}" aria-label="Level ${i+1} allocation percent" type="number" min="0" max="100" step="any" required value="${Number.isFinite(l.allocation)?escapeHtml(l.allocation):''}" oninput="editSIPLevel(${i},'allocation',this.value)"></td><td id="sip-level-amount-${i}"></td><td><button type="button" class="preview-btn" aria-label="Remove level ${i+1}" onclick="removeSIPLevel(${i})" ${sipLevels.length===1?'disabled':''}>Remove</button></td></tr>`).join('')}</tbody></table>`;
   updateSIPTotals();
 }
 function editSIPLevel(index,field,value){
   sipLevels[index][field]=value.trim()===''?NaN:Number(value);
   document.getElementById('settings-msg').style.display='none';
   updateSIPTotals();
+}
+function addSIPLevel(){
+  const last=sipLevels[sipLevels.length-1]?.fall;
+  sipLevels.push({fall:Number.isFinite(last)&&last>-95?Number((last-5).toFixed(6)):'',allocation:0});
+  refreshSettingsBreakdown();
+  document.getElementById('settings-msg').style.display='none';
+  document.querySelector(`[name="fall_${sipLevels.length-1}"]`).focus();
+}
+function removeSIPLevel(index){
+  if(sipLevels.length<=1)return;
+  sipLevels.splice(index,1);refreshSettingsBreakdown();
+  document.getElementById('settings-msg').style.display='none';
+  document.getElementById('add-sip-level').focus();
 }
 function updateSIPTotals(){
   const budget=Number(document.getElementById('set-budget').value);
@@ -2003,12 +2135,13 @@ async function saveSIPConfig(){
     const j=await api('/api/sip-config',{method:'PUT',body:JSON.stringify(config)});
     if(!j.success)throw new Error(j.error||'Unable to save configuration.');
     msg.style.color='#00ffb4';msg.style.display='block';msg.textContent='Configuration saved. Both Opportunities tabs will use these levels and allocations.';
-    document.getElementById('sip-budget-display').textContent=fmt(config.max_budget);
-    document.getElementById('sip-result').innerHTML='';
-    document.getElementById('sip-empty').style.display='block';
   }catch(error){msg.style.color='#ff6b6b';msg.style.display='block';msg.textContent=error.message;msg.focus();}
   finally{button.disabled=false;}
 }
 </script>
+<dialog id="rebalance-dialog" aria-labelledby="rebalance-title">
+  <div class="rebalance-dialog-head"><h2 id="rebalance-title">Rebalance holding</h2><button type="button" id="rebalance-close" class="preview-btn" onclick="document.getElementById('rebalance-dialog').close()" autofocus>Close</button></div>
+  <div id="rebalance-body"></div>
+</dialog>
 </body>
 </html>

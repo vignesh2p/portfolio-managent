@@ -1,7 +1,9 @@
+> Current behavior: the stock universe is managed in Admin → Stocks Config. Existing stocks are retained. No Google Sheets imports or network requests run. Login and optional cron refresh Yahoo quotes for saved stocks only.
+
 # Watchlist scheduler
 
 The protected handler is `GET /api/cron/watchlist`.
-It imports Google Sheets into the shared watchlist and clears the price cache.
+It imports the stock universe and refreshes expired Yahoo prices through the shared 30-minute cache.
 It requires `Authorization: Bearer <CRON_SECRET>`. Store this in the scheduler's
 secret/header settings, never in a URL or source control.
 
@@ -37,6 +39,4 @@ Failed runs can retry; abandoned runs become retryable after ten minutes.
 An empty or invalid sheet never replaces the saved watchlist. The database
 replacement is transactional. `watchlist_sync_runs` retains 30 days of run status.
 
-Opening Watchlist or either Opportunities view now imports the sheet once before
-displaying data. Watchlist Refresh also imports once. The optional background
-scheduler remains unactivated pending a hosting choice.
+Opening Watchlist or Opportunities reads the shared cached prices. Login and restored signed-in sessions trigger a universe refresh when due, with checks every 30 minutes while signed in. The optional scheduler remains unactivated pending a hosting choice.
