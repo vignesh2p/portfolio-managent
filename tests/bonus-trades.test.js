@@ -9,6 +9,7 @@ const parser = server.slice(server.indexOf('function parseExcelTrades('), server
 const context = vm.createContext({ XLSX });
 vm.runInContext(parser, context);
 function parse(rows){
+  rows=rows.map(row=>/^Scrips/.test(row[0])?row:[...row,...Array(Math.max(0,6-row.length)).fill(''),row[0]==='Stock'?'Yahoo Finance Code':'TEST.NS']);
   const book = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(rows), 'Trades');
   return context.parseExcelTrades(XLSX.write(book, { type:'buffer', bookType:'xlsx' }), 'bonus.xlsx');

@@ -2,6 +2,14 @@ const {test}=require('node:test'),assert=require('node:assert/strict');
 const {createClient}=require('@libsql/client');
 const r=require('../rebalancing');
 const match=(h,stocks)=>stocks.find(s=>s.ticker===h.ticker);
+
+test('rebalancing combinations respect cumulative remaining stock budgets',()=>{
+ const rows=[{ticker:'A',fall:-20,allocation:30,price:80,suggested_amount:3000},{ticker:'B',fall:-20,allocation:10,price:100,suggested_amount:1000}];
+ const plans=r.combinations(rows,20000);
+ assert.ok(plans.length>0);
+ assert.ok(plans.every(plan=>plan.buys.every(b=>b.shares*b.price<=b.suggested_amount)));
+ assert.equal(plans.find(p=>p.buys.length===1&&p.buys[0].ticker==='A').buys[0].shares,37);
+});
 test('ATH age strictly exceeds 365 days; SIP bands do not overlap and combinations use full budget weights',()=>{
  const now=new Date('2026-10-25T00:00:00+05:30');
  const stocks=[{ticker:'OLD',ath_date:'2025-10-24',price:100},{ticker:'YEAR',ath_date:'2025-10-25'},{ticker:'BAD',ath_date:'2025-02-30'}];

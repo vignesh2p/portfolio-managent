@@ -452,7 +452,7 @@ input,button,select{font-family:'DM Mono',monospace}
 
     <div id="tab-opportunities" class="page">
       <div class="page-title">Portfolio Opportunities</div>
-      <div class="page-sub">Zones are checked automatically from your buy trades. Allocations follow your SIP configuration.</div>
+      <div class="page-sub">The active zone includes unused allocation from earlier zones, less prior purchases. Suggested quantities use the current price and round down to whole shares. Portfolio stocks are excluded from Watchlist opportunities.</div>
       <div class="portfolio-tabs" role="tablist" aria-label="Opportunity source">
         <button type="button" id="opportunity-tab-portfolio" class="portfolio-tab active" onclick="loadOpportunityScope('portfolio')">Portfolio</button>
         <button type="button" id="opportunity-tab-watchlist" class="portfolio-tab" onclick="loadOpportunityScope('watchlist')">Watchlist</button>
@@ -529,7 +529,7 @@ input,button,select{font-family:'DM Mono',monospace}
         <div class="upload-section-title">Import trades from Excel</div>
         <div style="margin-bottom:16px">
           <a class="preview-btn" href="/api/trades/template" download="onepiece-trade-import-template.xlsx" style="display:inline-flex;align-items:center;min-height:44px;text-decoration:none">Download Excel template</a>
-          <p class="settings-hint">Includes buy, sell, and zero-price bonus examples. Replace the sample rows, keep the section headers, then upload and preview your trades. See the Instructions sheet for details.</p>
+          <p class="settings-hint">Yahoo Finance Code is required for every buy and sell row (for example RELIANCE.NS). Includes buy, sell, and zero-price bonus examples. Replace the sample rows, keep the section headers, then upload and preview your trades. See the Instructions sheet for details.</p>
         </div>
         <div class="drop-zone" id="drop-zone" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
           <input type="file" id="xls-file" accept=".xls,.xlsx,.xlsm" multiple onchange="onFileSelect(event)"/>
@@ -549,8 +549,9 @@ input,button,select{font-family:'DM Mono',monospace}
       <div class="upload-divider"><span>Or Log Trade Manually</span></div>
 
       <div class="trade-form-grid">
-        <div class="form-group"><label>Stock Name</label><input id="t-stock-name" class="form-input" list="t-stock-options" placeholder="Type to search watchlist…" autocomplete="off" oninput="populateTickerFromStock()" onchange="populateTickerFromStock()"/><datalist id="t-stock-options"></datalist></div>
-        <div class="form-group"><label>Ticker</label><input id="t-ticker" class="form-input" placeholder="e.g., RELIANCE"/></div>
+        <div class="form-group"><label for="t-stock-name">Search stock (Yahoo Finance)</label><input id="t-stock-name" class="form-input" list="t-stock-options" placeholder="Company name or Yahoo symbol…" maxlength="80" autocomplete="off" oninput="searchTradeStocks()" onchange="populateTickerFromStock()"/><datalist id="t-stock-options"></datalist><span id="trade-search-status" role="status" aria-live="polite"></span></div>
+        <div class="form-group"><label for="t-ticker">Ticker (editable before logging)</label><input id="t-ticker" class="form-input" placeholder="e.g., NSE:RELIANCE"/></div>
+        <div class="form-group"><label for="t-yahoo-code">Yahoo Finance Code</label><input id="t-yahoo-code" class="form-input" placeholder="e.g., RELIANCE.NS" autocomplete="off" spellcheck="false"/></div>
         <div class="form-group"><label>Type</label><select id="t-type" class="form-input form-select"><option value="BUY">BUY</option><option value="SELL">SELL</option></select></div>
         <div class="form-group"><label>Shares</label><input id="t-shares" class="form-input" type="number" placeholder="10" min="0.001" step="any"/></div>
         <div class="form-group"><label>Price (0 for bonus BUY)</label><input id="t-price" class="form-input" type="number" placeholder="2300" min="0" step="any"/></div>
@@ -1248,7 +1249,9 @@ async function searchIndianStocks(q,version){
   const response=await api('/api/stocks/search?q='+encodeURIComponent(q));
   if(version!==stockSearchVersion||document.getElementById('watchlist-editor').hidden)return;
   if(!response.success)throw new Error(response.error);
-  showStockSuggestions(response.data);
+  const labels=[...document.querySelectorAll('#watchlist-choices label')];
+  const local=labels.filter(label=>label.textContent.toLowerCase().includes(q)).map(label=>({name:label.textContent.trim(),symbol:label.querySelector('input').value,local:label.querySelector('input')}));
+  showStockSuggestions([...local,...response.data.filter(s=>!labels.some(label=>label.querySelector('input').value===s.symbol))]);
   status.textContent=response.data.length?'Choose a suggestion. New stocks join the OnePiece universe when you save.':'No Indian stocks found. Try an exact symbol ending .NS or .BO.';
  }catch(error){if(version===stockSearchVersion)status.textContent=error.message;}
 }
@@ -1257,7 +1260,7 @@ function filterWatchlistChoices(){
  const labels=[...document.querySelectorAll('#watchlist-choices label')];labels.forEach(label=>label.hidden=!!q&&!label.textContent.toLowerCase().includes(q)&&!label.querySelector('input').checked);
  if(q.length<2){status.textContent='Type at least 2 characters to search.';return;}
  const matches=labels.filter(label=>label.textContent.toLowerCase().includes(q)).map(label=>({name:label.textContent.trim(),symbol:label.querySelector('input').value,local:label.querySelector('input')}));
- if(matches.length){showStockSuggestions(matches);status.textContent='Matching stocks from the OnePiece universe.';return;}
+ if(matches.length)showStockSuggestions(matches);
  status.textContent='Searching NSE / BSE on Yahoo…';const version=stockSearchVersion;
  stockSearchTimer=setTimeout(()=>searchIndianStocks(q,version),350);
 }
@@ -1302,7 +1305,7 @@ async function loadOpportunityScope(scope='portfolio'){
   if(opportunityScope!==scope)return;
   if(!j.success){target.innerHTML=`<div class="error-box">${escapeHtml(j.error||'Unable to load opportunities')}</div>`;return;}
   opportunityRows=sortByDaysSinceAth(j.data.rows);
-target.innerHTML=`<div class="sheet-table-wrap"><table class="sheet-table"><thead><tr><th>Stock / CODE</th><th>Price</th><th>ATH</th><th>ATH date</th><th scope="col" aria-sort="ascending" title="Days since ATH, lowest first">Days Since</th>${j.data.levels.map(l=>`<th>${l.fall}% zone<br><small>${l.allocation}% allocation</small></th>`).join('')}</tr></thead><tbody>${opportunityRows.map((row,i)=>`<tr><td><b>${escapeHtml(row.name)}</b><br><small>${escapeHtml(row.ok_code||'—')}</small></td><td>${row.price==null?'—':fmt(row.price)}${row.quote_error?'<br><small>'+escapeHtml(row.quote_error)+'</small>':''}</td><td>${row.ath==null?'—':fmt(row.ath)}</td><td>${row.ath_date||'—'}</td><td>${row.days_since ?? '—'}</td>${row.levels.map((level,k)=>`<td class="${level.active?'opportunity-active':''}"><label><input type="checkbox" disabled title="Calculated from buy trades" aria-label="${escapeHtml(row.name)} ${level.fall}% zone" data-op-row="${i}" data-op-level="${k}" ${level.selected?'checked':''}><span title="Rounded display range; trade selection uses exact percentage boundaries">${opportunityPriceRange(level,row.levels[k+1])}<br><small>${fmt(level.allocated_amount||0)} | ${level.shares_to_buy||0} buy</small>${Number(level.invested_amount)||Number(level.bought_quantity)?`<br><small style="color:#4ade80" title="Total buys in this zone">Invested: ${fmt(level.invested_amount||0)} | ${Number(level.bought_quantity||0).toLocaleString('en-IN',{maximumFractionDigits:8})} bought</small>`: ''}</span></label></td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+target.innerHTML=`<div class="sheet-table-wrap"><table class="sheet-table"><thead><tr><th>Stock / CODE</th><th>Price</th><th>ATH</th><th>ATH date</th><th scope="col" aria-sort="ascending" title="Days since ATH, lowest first">Days Since</th>${j.data.levels.map(l=>`<th>${l.fall}% zone<br><small>${l.allocation}% allocation</small></th>`).join('')}</tr></thead><tbody>${opportunityRows.map((row,i)=>`<tr><td><b>${escapeHtml(row.name)}</b><br><small>${escapeHtml(row.ok_code||'—')}</small></td><td>${row.price==null?'—':fmt(row.price)}${row.quote_error?'<br><small>'+escapeHtml(row.quote_error)+'</small>':''}</td><td>${row.ath==null?'—':fmt(row.ath)}</td><td>${row.ath_date||'—'}</td><td>${row.days_since ?? '—'}</td>${row.levels.map((level,k)=>`<td class="${level.active?'opportunity-active':''}"><label><input type="checkbox" disabled title="Calculated from buy trades" aria-label="${escapeHtml(row.name)} ${level.fall}% zone" data-op-row="${i}" data-op-level="${k}" ${level.selected?'checked':''}><span title="Rounded display range; trade selection uses exact percentage boundaries">${opportunityPriceRange(level,row.levels[k+1])}<br><small>Zone budget: ${fmt(level.allocated_amount||0)}<br>Available through zone: ${fmt(level.remaining_amount||0)}${level.active?`<br>Suggested: ${fmt(level.suggested_amount||0)} | ${level.shares_to_buy||0} buy`:""}</small>${Number(level.invested_amount)||Number(level.bought_quantity)?`<br><small style="color:#4ade80" title="Total buys in this zone">Invested: ${fmt(level.invested_amount||0)} | ${Number(level.bought_quantity||0).toLocaleString('en-IN',{maximumFractionDigits:8})} bought</small>`: ''}</span></label></td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
 
 // -- SIP ----------------------------------
@@ -1864,6 +1867,12 @@ async function matchPreviewTradesToWatchlist(){
   });
   previewedTrades.forEach(trade=>{
     trade._sourceName=trade._sourceName||trade.ticker;
+    if(trade.yahoo_finance_code){
+      const stock=stocks.find(s=>s.yahoo_finance_code===trade.yahoo_finance_code);
+      const code=stock?.stockCode || (trade.yahoo_finance_code.endsWith('.NS')?'NSE:':'BSE:')+trade.yahoo_finance_code.slice(0,-3);
+      trade.ticker=code;trade._stockCode=code;trade._stockLabel=stock?.label||code;trade._matchType='yahoo';
+      previewStockCodeByLabel.set(trade._stockLabel,code);return;
+    }
     const matches=stocks.map(stock=>({...stock,score:scoreStockNameMatch(trade._sourceName,stock)})).sort((a,b)=>b.score-a.score);
     const exactMatches=matches.filter(match=>match.score===1);
     const nseExactMatch=exactMatches.find(isNseWatchlistStock);
@@ -1907,13 +1916,13 @@ function renderPreview(){
   const start=(previewPage-1)*PREVIEW_PAGE_SIZE;
   const end=Math.min(start+PREVIEW_PAGE_SIZE,previewedTrades.length);
   const options=[...previewStockCodeByLabel.keys()].filter(label=>label.includes(' — ')).map(label=>`<option value="${escapeHtml(label)}"></option>`).join('');
-  const rows=previewedTrades.slice(start,end).map((t,offset)=>{const index=start+offset;const matchNote=t._matchType==='nse'?'NSE selected':t._matchType==='fuzzy'?'Fuzzy Watchlist match':escapeHtml(t._file||'');const matchColor=t._matchType==='fuzzy'?'#ffa94d':t._matchType==='nse'?'#00ffb4':'rgba(255,255,255,.3)';return `<div class="preview-row ${t.type.toLowerCase()} ${t._stockCode?'':'unmatched'}"><div style="font-weight:600">${escapeHtml(t._sourceName)}<br><span style="font-size:10px;color:${matchColor}">${matchNote}</span></div><div class="${t.type==='BUY'?'type-buy':'type-sell'}">${t.type}</div><div>${t.shares}</div><div>${fmtD(t.price)}</div><div style="font-weight:600">${fmt(t.amount)}</div><div><input class="form-input preview-code-input" list="preview-stock-options" value="${escapeHtml(t._stockLabel||'')}" placeholder="Pick Stock Code" oninput="if(previewStockCodeByLabel.has(this.value))setPreviewTradeStockCode(${index},this.value)" onchange="setPreviewTradeStockCode(${index},this.value)"/></div><div style="font-size:11px;color:rgba(255,255,255,.4)">${t.traded_at?.substring(0,10)||'—'}</div></div>`;}).join('');
+  const rows=previewedTrades.slice(start,end).map((t,offset)=>{const index=start+offset;const matchNote=t._matchType==='nse'?'NSE selected':t._matchType==='fuzzy'?'Fuzzy Watchlist match':escapeHtml(t._file||'');const matchColor=t._matchType==='fuzzy'?'#ffa94d':t._matchType==='nse'?'#00ffb4':'rgba(255,255,255,.3)';return `<div class="preview-row ${t.type.toLowerCase()} ${t._stockCode?'':'unmatched'}"><div style="font-weight:600">${escapeHtml(t._sourceName)}<br><small>${escapeHtml(t.yahoo_finance_code||'')}</small><br><span style="font-size:10px;color:${matchColor}">${matchNote}</span></div><div class="${t.type==='BUY'?'type-buy':'type-sell'}">${t.type}</div><div>${t.shares}</div><div>${fmtD(t.price)}</div><div style="font-weight:600">${fmt(t.amount)}</div><div><input class="form-input preview-code-input" list="preview-stock-options" value="${escapeHtml(t._stockLabel||'')}" placeholder="Pick Stock Code" oninput="if(previewStockCodeByLabel.has(this.value))setPreviewTradeStockCode(${index},this.value)" onchange="setPreviewTradeStockCode(${index},this.value)"/></div><div style="font-size:11px;color:rgba(255,255,255,.4)">${t.traded_at?.substring(0,10)||'—'}</div></div>`;}).join('');
   const pagination=totalPages>1?`<div style="display:flex;justify-content:center;align-items:center;gap:10px;margin-top:14px;flex-wrap:wrap"><button class="preview-btn" type="button" onclick="setPreviewPage(${previewPage-1})" ${previewPage===1?'disabled':''}>Previous</button><label style="font-size:11px;color:rgba(255,255,255,.5)">Page <select class="form-input form-select" style="width:auto;padding:7px 28px 7px 10px;font-size:11px" onchange="setPreviewPage(this.value)">${Array.from({length:totalPages},(_,i)=>`<option value="${i+1}" ${i+1===previewPage?'selected':''}>${i+1}</option>`).join('')}</select> of ${totalPages}</label><button class="preview-btn" type="button" onclick="setPreviewPage(${previewPage+1})" ${previewPage===totalPages?'disabled':''}>Next</button></div>`:'';
   const errHtml=previewErrors.length?`<ul class="warn-list">${previewErrors.map(e=>`<li>${escapeHtml(e)}</li>`).join('')}</ul>`:'';
   document.getElementById('preview-section').innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;margin-bottom:10px;flex-wrap:wrap;gap:8px">
       <div style="font-size:12px;color:rgba(255,255,255,.5)">Found <strong style="color:#00ffb4">${previewedTrades.length}</strong> trades — <span style="color:#00ffb4">${buys} BUY</span> · <span style="color:#ff6b6b">${sells} SELL</span></div>
-      <div style="font-size:11px;color:${unmatched?'#ff8585':'rgba(255,255,255,.3)'}">${unmatched?`${unmatched} trade row${unmatched>1?'s':''} across ${unmatchedStocks} stock${unmatchedStocks>1?'s':''} need Stock Codes — highlighted below`:'All trades matched to Watchlist Stock Codes'}</div>
+      <div style="font-size:11px;color:${unmatched?'#ff8585':'rgba(255,255,255,.3)'}">${unmatched?`${unmatched} trade row${unmatched>1?'s':''} across ${unmatchedStocks} stock${unmatchedStocks>1?'s':''} need Stock Codes — highlighted below`:'Yahoo codes supplied. Review ticker mappings before importing.'}</div>
     </div>
     <datalist id="preview-stock-options">${options}</datalist>
     <div class="preview-table-wrap"><div class="preview-head"><div>Imported Name</div><div>Type</div><div>Shares</div><div>Price</div><div>Amount</div><div>Stock Code</div><div>Date</div></div>${rows}</div>
@@ -1970,13 +1979,44 @@ async function loadTradeStockOptions(){
     list.appendChild(option);
     tradeStockTickerByLabel.set(label,stockCode);
   });
-  input.placeholder=stocks.size?'Type to search watchlist…':'No watchlist stocks available';
+  (j.data||[]).forEach(stock=>{
+    const code=String(stock.stock_code||'').trim().toUpperCase();
+    const label=`${String(stock.name||code).trim()} — ${code}`;
+    tradeYahooByLabel.set(label,stock.yahoo_finance_code||'');
+  });
+  input.placeholder='Search company name or Yahoo symbol…';
   tradeWatchlistLoaded=true;
 }
 function populateTickerFromStock(){
   const label=document.getElementById('t-stock-name')?.value||'';
   const ticker=tradeStockTickerByLabel.get(label);
-  if(ticker) document.getElementById('t-ticker').value=ticker;
+  if(ticker) {
+    document.getElementById('t-ticker').value=ticker;
+    document.getElementById('t-yahoo-code').value=tradeYahooByLabel.get(label)||'';
+  }
+}
+const tradeYahooByLabel=new Map();
+let tradeSearchTimer,tradeSearchVersion=0;
+function searchTradeStocks(){
+  clearTimeout(tradeSearchTimer);const version=++tradeSearchVersion;
+  const q=document.getElementById('t-stock-name').value.trim();
+  if(tradeStockTickerByLabel.has(q)){populateTickerFromStock();return;}
+  const status=document.getElementById('trade-search-status');
+  if(q.length<2){status.textContent='Type at least 2 characters.';return;}
+  status.textContent='Searching Yahoo Finance…';
+  tradeSearchTimer=setTimeout(async()=>{
+    try{
+      const result=await api('/api/stocks/search?q='+encodeURIComponent(q));
+      if(version!==tradeSearchVersion)return;
+      if(!result.success)throw new Error(result.error);
+      const list=document.getElementById('t-stock-options');list.replaceChildren();tradeStockTickerByLabel.clear();tradeYahooByLabel.clear();
+      for(const stock of result.data){
+        const label=stock.name+' — '+stock.symbol,option=document.createElement('option');option.value=label;list.appendChild(option);
+        tradeStockTickerByLabel.set(label,(stock.symbol.endsWith('.NS')?'NSE:':'BSE:')+stock.symbol.slice(0,-3));tradeYahooByLabel.set(label,stock.symbol);
+      }
+      status.textContent=result.data.length?'Select a stock, then review or edit its ticker before logging.':'No stocks found. Try an exact .NS or .BO symbol.';
+    }catch(error){if(version===tradeSearchVersion)status.textContent=error.message;}
+  },350);
 }
 async function addTrade(){
   const ticker=document.getElementById('t-ticker').value.trim().toUpperCase();
@@ -1986,9 +2026,10 @@ async function addTrade(){
   const notes=document.getElementById('t-notes').value.trim();
   const date=document.getElementById('t-date').value;
   if(!ticker || !Number.isFinite(shares) || shares <= 0 || !Number.isFinite(price) || price < 0 || (type === 'SELL' && price === 0)) return alert('Enter a ticker, positive shares and a valid price. Zero price is allowed for bonus BUY trades.');
-  const j=await api('/api/trades',{method:'POST',body:JSON.stringify({ticker,type,shares,price,notes,traded_at:date?date+'T12:00:00':undefined})});
+  const yahoo_finance_code=document.getElementById('t-yahoo-code').value.trim().toUpperCase();
+  const j=await api('/api/trades',{method:'POST',body:JSON.stringify({ticker,yahoo_finance_code,type,shares,price,notes,traded_at:date?date+'T12:00:00':undefined})});
   if(!j.success) return alert('Error: '+j.error);
-  ['t-stock-name','t-ticker','t-shares','t-price','t-notes'].forEach(id=>document.getElementById(id).value='');
+  ['t-stock-name','t-ticker','t-yahoo-code','t-shares','t-price','t-notes'].forEach(id=>document.getElementById(id).value='');
   loadTrades();
 }
 async function loadTrades(){

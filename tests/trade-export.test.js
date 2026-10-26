@@ -15,8 +15,8 @@ test('export includes every in-range trade, bonus trades and both boundaries, so
     ].map(args=>({sql:'INSERT INTO trade_history VALUES (?,?,?,?)',args})));
     await client.batch(rows,'write');
     await client.execute("ALTER TABLE trade_history ADD COLUMN ticker TEXT DEFAULT 'BONUS'");
-    await client.execute('CREATE TABLE watchlist(id INTEGER,user_id INTEGER,ticker TEXT,stock_code TEXT,code TEXT,name TEXT)');
-    await client.execute("INSERT INTO watchlist VALUES (1,99,'BONUS','NSE:BONUS','OK1','Bonus Company')");
+    await client.execute('CREATE TABLE watchlist(id INTEGER,user_id INTEGER,ticker TEXT,stock_code TEXT,code TEXT,name TEXT,yahoo_finance_code TEXT)');
+    await client.execute("INSERT INTO watchlist VALUES (1,99,'BONUS','NSE:BONUS','OK1','Bonus Company','BONUS.NS')");
     const source=fs.readFileSync(path.join(__dirname,'../server.js'),'utf8');
     const route=source.slice(source.indexOf('app.get("/api/trades/export"'),source.indexOf('app.get("/api/trades",'));
     let handler;

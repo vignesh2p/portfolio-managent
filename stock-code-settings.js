@@ -1,6 +1,10 @@
 function matchStock(holding, stocks) {
+  if (holding.yahoo_finance_code) {
+    const mapped = stocks.find(s => s.yahoo_finance_code === holding.yahoo_finance_code);
+    if (mapped) return mapped;
+  }
   const ticker = holding.ticker.toUpperCase();
-  const exact = stocks.find(s => [s.stock_code, s.ticker, s.code].some(v => String(v || '').toUpperCase() === ticker));
+  const exact = stocks.find(s => [s.stock_code, s.ticker, s.code, s.yahoo_finance_code].some(v => String(v || '').toUpperCase() === ticker));
   if (exact) return exact;
   if (ticker.includes(':')) return null;
   const matches = stocks.filter(s => String(s.stock_code || '').toUpperCase().split(':').pop() === ticker);

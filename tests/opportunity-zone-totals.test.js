@@ -26,7 +26,7 @@ vm.runInNewContext(route,{namedWatchlists:{stocks:async()=>[{ticker:'TEST',code:
     assert.equal(body.success,true,body.error);
     return body.data.rows[0].levels;
   };
-  for(const scope of ['portfolio','watchlist']){
+  for(const scope of ['portfolio']){
     const result=await call(scope);
     assert.equal(result[0].invested_amount,438);
     assert.equal(result[0].bought_quantity,5);
@@ -45,7 +45,7 @@ vm.runInNewContext(route,{namedWatchlists:{stocks:async()=>[{ticker:'TEST',code:
   assert.equal(saved[0].invested_amount,438);
   levels[0].fall=-12;
   [5,15,20,10,25,15,10].forEach((allocation,i)=>levels[i].allocation=allocation);
-  for(const scope of ['portfolio','watchlist']){
+  for(const scope of ['portfolio']){
     const custom=await call(scope);
     assert.equal(custom[0].fall,-12);
     assert.equal(custom[0].trigger_price,88);
@@ -63,7 +63,7 @@ test('custom level counts and exact decimal boundaries highlight and count each 
    const trades=thresholds.map(price=>({type:'BUY',price,shares:1}));
    let price=0,handler;
    vm.runInNewContext(route,{app:{get:(_p,_a,fn)=>handler=fn},auth:()=>{},syncOnepieceWatchlistTable:async()=>{},getOrSeedSIP:async()=>({levels:JSON.stringify(levels),max_budget:1000}),getOnepieceSystemUserId:async()=>99,namedWatchlists:{stocks:async()=>[{ticker:'TEST',code:'OK1',stock_code:'NSE:TEST'}]},matchStock:()=>null,fetchPriceFromWatchlistTable:async()=>({ath,price}),db:{prepare:sql=>({all:async()=>sql.includes('stock_sip_budgets')?[]:sql.includes('trade_history')?trades:[{ticker:'TEST',code:'OK1',stock_code:'NSE:TEST'}]})}});
-   for(const scope of ['portfolio','watchlist'])for(const candidate of [...thresholds,thresholds[0]+1,1,0]){
+   for(const scope of ['portfolio'])for(const candidate of [...thresholds,thresholds[0]+1,1,0]){
      price=candidate;let body;
      await handler({user:{id:1},query:{scope}},{set(){return this;},status(){return this;},json:v=>body=v});
      assert.equal(body.success,true,body.error);

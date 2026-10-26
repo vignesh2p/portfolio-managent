@@ -32,10 +32,10 @@ test('opportunities read shared quotes without refreshing providers',async()=>{
   const res={set(){return this;},status(){return this;},json:v=>body=v};
   for(const scope of ['portfolio','watchlist']){
     const before=syncs;await handler({user:{id:1},query:{scope}},res);
-    assert.equal(syncs,before);assert.equal(body.data.rows.length,2);
+    assert.equal(syncs,before);assert.equal(body.data.rows.length,scope==='portfolio'?2:0);
     assert.ok(body.data.rows.every(r=>r.price===120));
   }
-  assert.equal(reads,4);fail=true;
+  assert.equal(reads,2);fail=true;
   await handler({user:{id:1},query:{}},res);
-  assert.equal(body.success,true);assert.equal(reads,6);assert.equal(syncs,0);
+  assert.equal(body.success,true);assert.equal(reads,4);assert.equal(syncs,0);
 });

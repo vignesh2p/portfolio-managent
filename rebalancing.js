@@ -14,9 +14,9 @@ function sourceRows(holdings,stocks,match,now){
 }
 function candidates(stocks,holdings,levels,allowed,source,match,now){
  const master=match(source,stocks);
- return stocks.filter(s=>s.ticker!==master?.ticker&&s.ticker!==source.ticker&&allowed.has(s.ticker)&&String(s.code||'').trim()&&String(s.stock_code||'').trim()&&Number.isFinite(s.price)&&s.price>0&&s.ath>0).map(s=>{
+ return stocks.filter(s=>s.ticker!==master?.ticker&&s.ticker!==source.ticker&&allowed.has(s.ticker)&&String(s.stock_code||'').trim()&&Number.isFinite(s.price)&&s.price>0&&s.ath>0).map(s=>{
   const zone=levels.find((l,i)=>s.price<=s.ath*(1+Number(l.fall)/100)&&s.price>(levels[i+1]?s.ath*(1+Number(levels[i+1].fall)/100):0));
-  if(!zone||!(Number(zone.allocation)>0))return null;
+  if(!zone)return null;
   const owned=holdings.find(h=>match(h,stocks)?.ticker===s.ticker);
   return {ticker:owned?.ticker||s.ticker,name:s.name,code:s.code,stock_code:s.stock_code,price:s.price,fall:Number(zone.fall),allocation:Number(zone.allocation),drop_pct:(s.price/s.ath-1)*100,days_since:daysSince(s.ath_date,now),quote_error:s.quote_error||null};
  }).filter(row=>row&&row.days_since!==null&&row.days_since<100).sort((a,b)=>b.fall-a.fall||(a.days_since??Infinity)-(b.days_since??Infinity)||a.ticker.localeCompare(b.ticker));
@@ -27,7 +27,8 @@ function combinations(rows,budget){
  function add(picks){
   const key=picks.map(p=>p.ticker).sort().join('|');if(seen.has(key))return;seen.add(key);
   const weight=picks.reduce((s,p)=>s+p.allocation,0);
-  const buys=picks.map(p=>({...p,shares:Math.floor((budget*p.allocation/weight)/p.price)}));
+  if(!(weight>0))return;
+  const buys=picks.map(p=>({...p,shares:Math.floor(Math.min(budget*p.allocation/weight,p.suggested_amount ?? Infinity)/p.price)}));
   if(buys.some(p=>p.shares<1))return;
   const total=buys.reduce((s,p)=>s+p.price*p.shares,0);
   result.push({buys,total,remaining:budget-total});
