@@ -1,0 +1,58 @@
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+const {createClient}=require('@libsql/client');
+const source=fs.readFileSync(path.join(__dirname,'../server.js'),'utf8');
+function section(start,end){return source.slice(source.indexOf(start),source.indexOf(end,source.indexOf(start)));}
+test('sales require user-owned holdings and atomically update history and quantity',async t=>{
+  const file=path.join(require('node:os').tmpdir(),'sell-holdings-'+require('node:crypto').randomUUID()+'.db');
+  const client=createClient({url:require('node:url').pathToFileURL(file).href});
+  t.after(()=>{client.close();try{fs.unlinkSync(file);}catch(error){if(!["EPERM","ENOENT","EBUSY"].includes(error.code))throw error;}});
+  await client.executeMultiple(`CREATE TABLE portfolio(user_id INTEGER,ticker TEXT,shares REAL,avg_price REAL,stock_name TEXT,ok_code TEXT,yahoo_finance_code TEXT);
+    CREATE TABLE trade_history(id INTEGER PRIMARY KEY,user_id INTEGER,exchange TEXT,ticker TEXT,type TEXT,shares REAL,price REAL,amount REAL,notes TEXT,traded_at TEXT,stock_name TEXT,ok_code TEXT,yahoo_finance_code TEXT);`);
+  const context=vm.createContext({remoteDb:client,dbReady:Promise.resolve(),db:{},matchStock:require('../stock-code-settings').matchStock,namedWatchlists:{universe:async()=>[{ticker:'522017',stock_code:'BOM:522017',name:'Fluidomat Ltd',yahoo_finance_code:'FLUIDOM.BO'}]}});
+  vm.runInContext(section('function toJsValue(', 'async function execRaw(')+section('async function transactionRaw(', 'const dbRaw =')+section('async function _syncPortfolio(', '// Rebuild a holding')+section('async function saveTradeYahoo(', 'app.post("/api/trades",'),context);
+  const sell=(uid,ticker,shares,code='')=>context.recordPortfolioTrade(uid,{ticker,exchange:'NSE'},{type:'SELL',shares,price:10,amount:shares*10},null,'2026-11-05',code);
+  const holding=async(uid,ticker)=>(await client.execute({sql:'SELECT shares FROM portfolio WHERE user_id=? AND ticker=?',args:[uid,ticker]})).rows[0]?.shares;
+  const count=async()=>Number((await client.execute('SELECT COUNT(*) AS n FROM trade_history')).rows[0].n);
+  await client.execute("INSERT INTO portfolio VALUES(1,'ABC',10,5,'','','')");
+  await assert.rejects(sell(2,'ABC',1),/only sell stocks you hold/);
+  await assert.rejects(sell(1,'MISSING',1),/only sell stocks you hold/);
+  await assert.rejects(sell(1,'ABC',11),/You hold 10 shares/);
+  assert.equal(await count(),0);assert.equal(await holding(1,'ABC'),10);
+  await sell(1,'ABC',3.5);assert.equal(await holding(1,'ABC'),6.5);
+  await assert.rejects(sell(1,'ABC',7),/You hold 6.5 shares/);
+  await sell(1,'ABC',6.5);assert.equal(await holding(1,'ABC'),undefined);
+  await assert.rejects(sell(1,'ABC',1),/only sell stocks you hold/);
+  assert.equal(await count(),2);
+  // Production legacy holding has only the numeric BSE code, no saved Yahoo code.
+  await client.execute("INSERT INTO portfolio VALUES(1,'BOM:522017',10,5,'','','')");
+  await assert.rejects(sell(2,'BSE:FLUIDOM',1,'FLUIDOM.BO'),/only sell stocks you hold/);
+  await assert.rejects(sell(1,'BSE:FLUIDOM',11,'FLUIDOM.BO'),/You hold 10 shares/);
+  await sell(1,'BSE:FLUIDOM',3,'FLUIDOM.BO');
+  assert.equal(await holding(1,'BOM:522017'),7);
+  assert.equal((await client.execute("SELECT ticker,yahoo_finance_code FROM trade_history ORDER BY id DESC LIMIT 1")).rows[0].yahoo_finance_code,'FLUIDOM.BO');
+  await sell(1,'BOM:522017',7,'FLUIDOM.BO');
+  assert.equal(await holding(1,'BOM:522017'),undefined);
+  // A Yahoo search selection must debit the imported holding, not create a new ticker.
+  await client.execute("INSERT INTO portfolio VALUES(1,'Fluidomat Ltd',10,5,'Fluidomat Ltd','','FLUIDOM.BO')");
+  await assert.rejects(sell(2,'BSE:FLUIDOM',1,'FLUIDOM.BO'),/only sell stocks you hold/);
+  await assert.rejects(sell(1,'BSE:FLUIDOM',11,'FLUIDOM.BO'),/You hold 10 shares/);
+  await assert.rejects(sell(1,'Fluidomat Ltd',1,'OTHER.BO'),/different stocks/);
+  await sell(1,'BSE:FLUIDOM',3,'FLUIDOM.BO');
+  assert.equal(await holding(1,'Fluidomat Ltd'),7);
+  assert.equal(await holding(1,'BSE:FLUIDOM'),undefined);
+  assert.equal((await client.execute("SELECT ticker FROM trade_history ORDER BY id DESC LIMIT 1")).rows[0].ticker,'Fluidomat Ltd');
+  await sell(1,'FLUIDOM.BO',7,'FLUIDOM.BO');
+  assert.equal(await holding(1,'Fluidomat Ltd'),undefined);
+  await assert.rejects(sell(1,'BSE:FLUIDOM',1,'FLUIDOM.BO'),/only sell stocks you hold/);
+  await client.execute("INSERT INTO portfolio VALUES(1,'FLUIDOM.BO',2,5,'','','')");
+  await sell(1,'BSE:FLUIDOM',2,'FLUIDOM.BO');
+  assert.equal(await holding(1,'FLUIDOM.BO'),undefined);
+  await client.execute("INSERT INTO portfolio VALUES(1,'ALIAS-A',2,5,'','','FLUIDOM.BO'),(1,'ALIAS-B',2,5,'','','FLUIDOM.BO')");
+  await assert.rejects(sell(1,'BSE:FLUIDOM',1,'FLUIDOM.BO'),/Multiple portfolio holdings/);
+  await client.execute("INSERT INTO portfolio VALUES(1,'ROLLBACK',5,5,'','','')");
+  await client.execute("CREATE TRIGGER fail_sale BEFORE UPDATE ON portfolio BEGIN SELECT RAISE(ABORT,'forced failure'); END");
+  await assert.rejects(sell(1,'ROLLBACK',1),/forced failure/);
+  assert.equal(await holding(1,'ROLLBACK'),5);assert.equal(await count(),7);
+});

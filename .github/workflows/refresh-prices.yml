@@ -1,0 +1,43 @@
+name: Refresh shared prices
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/refresh-prices.yml"]
+  schedule:
+    # UTC: weekdays 09:00–15:30 Asia/Kolkata.
+    - cron: '30 3-9 * * 1-5'
+    - cron: '0 4-10 * * 1-5'
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: shared-price-refresh
+  cancel-in-progress: false
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
+    steps:
+      - name: Check scheduler configuration
+        shell: bash
+        run: |
+          if [[ "$APP_BASE_URL" != https://* || -z "$CRON_SECRET" ]]; then
+            echo 'Configure APP_BASE_URL (HTTPS deployment origin) and CRON_SECRET repository secrets.'
+            exit 1
+          fi
+      - name: Verify scheduler authentication
+        shell: bash
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --connect-timeout 15 --max-time 30 \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            "${APP_BASE_URL%/}/api/cron/watchlist?dry_run=1"
+      - name: Refresh saved universe
+        shell: bash
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --connect-timeout 15 --max-time 125 --retry 2 --retry-delay 10 \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            "${APP_BASE_URL%/}/api/cron/watchlist"

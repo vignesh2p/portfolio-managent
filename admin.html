@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ONEPIECE Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#061018;
+    --bg2:#08131d;
+    --panel:#0d1824;
+    --panel2:#101d2b;
+    --line:rgba(255,255,255,.08);
+    --line2:rgba(0,255,180,.14);
+    --text:#f7fbff;
+    --muted:rgba(255,255,255,.58);
+    --good:#00ffb4;
+    --info:#54c7ff;
+    --bad:#ff6b6b;
+  }
+  *,*::before,*::after{box-sizing:border-box}
+  html,body{margin:0;min-height:100%;background:
+    radial-gradient(circle at top left, rgba(0,255,180,.08), transparent 30%),
+    radial-gradient(circle at 90% 20%, rgba(84,199,255,.08), transparent 25%),
+    linear-gradient(180deg,var(--bg),var(--bg2) 50%,#05090e 100%);
+    color:var(--text);
+    font-family:'DM Mono',monospace;
+  }
+  button,input{font:inherit}
+  .hidden{display:none !important}
+
+  .login-wrap{
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:24px;
+  }
+  .login-card{
+    width:min(560px,100%);
+    border:1px solid var(--line);
+    border-radius:24px;
+    background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.03));
+    box-shadow:0 30px 90px rgba(0,0,0,.35);
+    padding:28px;
+    backdrop-filter:blur(16px);
+  }
+  .eyebrow{
+    font-size:10px;
+    letter-spacing:4px;
+    text-transform:uppercase;
+    color:var(--good);
+    margin-bottom:10px;
+  }
+  .login-title,.page-title{
+    font-family:'Syne',sans-serif;
+    letter-spacing:-.03em;
+  }
+  .login-title{font-size:34px;font-weight:800;margin:0 0 8px}
+  .login-sub{margin:0 0 22px;color:var(--muted);font-size:13px;line-height:1.8}
+  .form-grid{display:grid;gap:14px}
+  .field label{
+    display:block;
+    font-size:10px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    color:rgba(255,255,255,.38);
+    margin-bottom:8px;
+  }
+  .field input{
+    width:100%;
+    padding:14px 16px;
+    border-radius:12px;
+    border:1px solid var(--line);
+    background:rgba(255,255,255,.04);
+    color:#fff;
+    outline:none;
+  }
+  .field input:focus{border-color:var(--line2);box-shadow:0 0 0 3px rgba(0,255,180,.08)}
+  .btn-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
+  .btn{
+    padding:12px 16px;
+    border:0;
+    border-radius:12px;
+    cursor:pointer;
+    font-size:11px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    font-weight:700;
+    text-decoration:none;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .btn-primary{background:linear-gradient(135deg,var(--good),var(--info));color:#000}
+  .btn-secondary{background:rgba(255,255,255,.05);color:#fff;border:1px solid var(--line)}
+  .msg{
+    margin-top:14px;
+    padding:12px 14px;
+    border-radius:12px;
+    font-size:12px;
+    line-height:1.7;
+    display:none;
+  }
+  .msg.ok{display:block;background:rgba(0,255,180,.08);border:1px solid rgba(0,255,180,.18);color:var(--good)}
+  .msg.err{display:block;background:rgba(255,107,107,.08);border:1px solid rgba(255,107,107,.18);color:#ff9494}
+
+  .app-shell{
+    min-height:100vh;
+    display:grid;
+    grid-template-columns:280px minmax(0,1fr);
+  }
+  .sidebar{
+    border-right:1px solid var(--line);
+    background:rgba(255,255,255,.02);
+    padding:22px 18px;
+    backdrop-filter:blur(10px);
+  }
+  .brand{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    margin-bottom:18px;
+  }
+  .brand-title{
+    font-family:'Syne',sans-serif;
+    font-size:20px;
+    font-weight:800;
+    letter-spacing:-.03em;
+  }
+  .brand-sub{
+    font-size:10px;
+    letter-spacing:3px;
+    text-transform:uppercase;
+    color:rgba(255,255,255,.38);
+    margin-top:4px;
+  }
+  .nav-title{
+    font-size:11px;
+    letter-spacing:2px;
+    color:rgba(255,255,255,.4);
+    text-transform:uppercase;
+    margin:22px 0 10px;
+  }
+  .table-nav{display:flex;flex-direction:column;gap:8px}
+  .table-btn{
+    width:100%;
+    text-align:left;
+    border-radius:14px;
+    border:1px solid var(--line);
+    background:rgba(255,255,255,.03);
+    color:#fff;
+    padding:13px 14px;
+    cursor:pointer;
+    transition:.15s ease;
+  }
+  .table-btn:hover{transform:translateY(-1px);border-color:rgba(0,255,180,.18)}
+  .table-btn.active{
+    background:rgba(0,255,180,.10);
+    border-color:rgba(0,255,180,.22);
+  }
+  .table-btn b{display:block;font-size:14px}
+  .table-btn small{display:block;margin-top:4px;color:rgba(255,255,255,.42);font-size:10px;letter-spacing:1px}
+  .sidebar-footer{
+    margin-top:18px;
+    padding-top:18px;
+    border-top:1px solid var(--line);
+    display:grid;
+    gap:10px;
+  }
+  .side-stat{
+    padding:12px 14px;
+    border-radius:14px;
+    background:rgba(255,255,255,.03);
+    border:1px solid var(--line);
+  }
+  .side-stat .label{
+    font-size:10px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    color:rgba(255,255,255,.38);
+    margin-bottom:8px;
+  }
+  .side-stat .value{
+    font-family:'Syne',sans-serif;
+    font-size:18px;
+    font-weight:700;
+  }
+
+  .main{
+    min-width:0;
+    padding:22px;
+  }
+  .topbar{
+    display:flex;
+    align-items:flex-end;
+    justify-content:space-between;
+    gap:16px;
+    flex-wrap:wrap;
+    margin-bottom:18px;
+  }
+  .page-title{font-size:28px;font-weight:800;margin:0}
+  .page-meta{margin-top:6px;font-size:12px;color:var(--muted)}
+  .top-actions{display:flex;gap:10px;flex-wrap:wrap}
+  .banner,.error{
+    border-radius:14px;
+    padding:14px 16px;
+    margin-bottom:14px;
+    display:none;
+    font-size:12px;
+    line-height:1.75;
+  }
+  .banner{background:rgba(0,255,180,.08);border:1px solid rgba(0,255,180,.18);color:var(--good)}
+  .error{background:rgba(255,107,107,.08);border:1px solid rgba(255,107,107,.18);color:#ff9494}
+  .panel{
+    border:1px solid var(--line);
+    border-radius:20px;
+    background:rgba(255,255,255,.03);
+    padding:18px;
+    box-shadow:0 20px 60px rgba(0,0,0,.20);
+  }
+  .shell-info{display:grid;gap:12px}
+  .shell-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:10px;
+    flex-wrap:wrap;
+    margin-bottom:16px;
+  }
+  .chip{
+    display:inline-flex;
+    align-items:center;
+    padding:6px 10px;
+    border-radius:999px;
+    background:rgba(255,255,255,.05);
+    border:1px solid var(--line);
+    font-size:10px;
+    letter-spacing:1px;
+    text-transform:uppercase;
+    color:rgba(255,255,255,.58);
+  }
+  .table-box{
+    overflow:auto;
+    border:1px solid var(--line);
+    border-radius:16px;
+    background:rgba(255,255,255,.02);
+  }
+  table{
+    width:100%;
+    border-collapse:separate;
+    border-spacing:0;
+    min-width:860px;
+  }
+  thead th{
+    position:sticky;
+    top:0;
+    z-index:1;
+    background:rgba(11,20,29,.98);
+    border-bottom:1px solid var(--line);
+    font-size:10px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    color:rgba(255,255,255,.4);
+    text-align:left;
+    padding:12px 12px;
+  }
+  tbody td{
+    border-bottom:1px solid rgba(255,255,255,.05);
+    padding:10px 12px;
+    vertical-align:top;
+    font-size:12px;
+    word-break:break-word;
+    white-space:pre-wrap;
+  }
+  tbody tr:hover{background:rgba(255,255,255,.02)}
+  .muted{color:rgba(255,255,255,.42)}
+  .row-index{
+    width:64px;
+    color:rgba(255,255,255,.45);
+  }
+  .empty-state{
+    padding:26px;
+    text-align:center;
+    color:rgba(255,255,255,.42);
+  }
+  .subtle{
+    color:rgba(255,255,255,.42);
+    font-size:12px;
+    line-height:1.7;
+  }
+  .debug-grid{
+    display:grid;
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    gap:10px;
+  }
+  .debug-stat{
+    padding:12px 14px;
+    border-radius:14px;
+    background:rgba(255,255,255,.03);
+    border:1px solid var(--line);
+    min-width:0;
+  }
+  .debug-stat .label{
+    font-size:10px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    color:rgba(255,255,255,.38);
+    margin-bottom:8px;
+  }
+  .debug-stat .value{
+    font-family:'Syne',sans-serif;
+    font-size:15px;
+    font-weight:700;
+    line-height:1.4;
+    word-break:break-word;
+  }
+
+  @media (max-width: 980px){
+    .app-shell{grid-template-columns:1fr}
+    .sidebar{border-right:none;border-bottom:1px solid var(--line)}
+    table{min-width:760px}
+    .debug-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  }
+  @media (max-width: 720px){
+    .login-title{font-size:28px}
+    .main{padding:16px}
+    .sidebar{padding:18px 14px}
+    .topbar{align-items:flex-start}
+    .page-title{font-size:24px}
+    .debug-grid{grid-template-columns:1fr}
+  }
+.universe-input{font-size:16px;min-height:48px;min-width:160px;max-width:100%;padding:10px;background:#141c2f;color:#fff;border:1px solid #65718a;border-radius:8px}#universe-search{display:block;width:100%;margin:10px 0}#universe-message{margin:12px 0}#universe-rows tr[hidden]{display:none}#universe-rows tr.yahoo-code-invalid>td{background:#4a1823;color:#ffd5dc}#universe-rows tr.yahoo-code-invalid input[name="yahoo_finance_code"]{border:2px solid #ff647c}.yahoo-validation-note{max-width:300px;margin-top:6px;font-size:12px}#universe-validate-yahoo{margin:8px}</style>
+<link rel="stylesheet" href="/responsive.css">
+<script src="/responsive.js" defer></script>
+<script src="/admin-activity.js" defer></script>
+<script src="/admin-price-refresh.js" defer></script>
+<script src="/tax-admin-ui.js" defer></script>
+<script src="/corporate-actions-admin.js" defer></script>
+<link rel="stylesheet" href="/corporate-actions.css">
+<link rel="stylesheet" href="/tax-harvesting.css">
+</head>
+<body class="admin-console">
+  <div id="login-view" class="login-wrap">
+    <div class="login-card">
+      <div class="eyebrow">ONEPIECE ADMIN</div>
+      <h1 class="login-title">Database Console</h1>
+      <p class="login-sub">Sign in to inspect the live tables. This console is read only, so you can browse data safely without editing or deleting anything from here.</p>
+      <form id="login-form" class="form-grid">
+        <div class="field">
+          <label>Admin Email</label>
+          <input id="admin-email" type="email" autocomplete="username" />
+        </div>
+        <div class="field">
+          <label>Admin Password</label>
+          <input id="admin-password" type="password" autocomplete="off" placeholder="Enter admin password" />
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="login-btn" type="submit">Enter Console</button>
+          <a class="btn btn-secondary" href="/">Back to App</a>
+        </div>
+      </form>
+      <div id="login-msg" class="msg"></div>
+      <p class="subtle" style="margin-top:16px">If you want to reset the browser session, use <a href="/logout" style="color:var(--good);text-decoration:none">/logout</a>.</p>
+    </div>
+  </div>
+
+  <div id="admin-view" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="brand">
+        <div>
+          <div class="brand-title">ONEPIECE</div>
+          <div class="brand-sub">Admin Browser</div>
+        </div>
+        <span class="chip">Live</span>
+      </div>
+
+      <div class="nav-title">Tables</div>
+      <div id="table-nav" class="table-nav"></div>
+
+      <div class="sidebar-footer">
+        <div class="side-stat">
+          <div class="label">Signed In As</div>
+          <div class="value" id="admin-user-name">-</div>
+        </div>
+        <div class="side-stat">
+          <div class="label">Current Table</div>
+          <div class="value" id="current-table-name">-</div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div>
+          <h2 class="page-title" id="table-title">Select a table</h2>
+          <div class="page-meta" id="table-meta">Choose a table from the left to inspect rows.</div>
+        </div>
+        <div class="top-actions">
+          <button class="btn btn-primary" id="refresh-prices-btn" type="button" aria-describedby="price-refresh-help">Refresh all prices now</button>
+          <button class="btn btn-secondary" id="refresh-btn" type="button">Refresh</button>
+          <button class="btn btn-secondary" id="logout-btn" type="button">Sign Out</button>
+        </div>
+      </div>
+
+      <div id="admin-banner" class="banner"></div>
+      <div id="admin-error" class="error"></div>
+      <div class="panel" style="margin-bottom:14px">
+        <p id="price-refresh-help" class="subtle">Pull the latest Yahoo prices for the entire OnePiece stock universe, even outside trading hours. Replaces saved prices for all users. Keep this page open until finished.</p>
+        <p id="price-refresh-status" role="status"></p>
+        <details id="price-refresh-errors" hidden><summary>Stocks that could not be refreshed</summary><ul id="price-refresh-error-list"></ul></details>
+      </div>
+      <div id="db-debug" class="panel" style="margin-bottom:14px"></div>
+
+      <div id="content" class="panel">
+        <div class="shell-info">
+          <div class="shell-head">
+            <div>
+              <div class="eyebrow" style="margin-bottom:8px">Ready</div>
+              <div style="font-family:'Syne',sans-serif;font-size:22px;font-weight:800;letter-spacing:-.03em">Pick a table from the left</div>
+            </div>
+            <span class="chip">Read only</span>
+          </div>
+          <div class="subtle">
+            The left panel is fixed and always visible. Select any table to load it into the right panel and inspect the rows in a read-only grid.
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+<script>
+const BASE = window.location.origin;
+const STORAGE_TOKEN = 'pf_admin_token';
+const STORAGE_USER = 'pf_admin_user';
+const TABLES = ['users', 'portfolio', 'watchlist', 'sip_config', 'trade_history'];
+
+let adminToken = localStorage.getItem(STORAGE_TOKEN) || '';
+let adminUser = safeJson(localStorage.getItem(STORAGE_USER));
+let dbDebug = null;
+let tableCounts = {};
+let currentTable = 'User management';
+let currentSchema = [];
+let currentRows = [];
+let booted = false;
+
+const loginView = document.getElementById('login-view');
+const adminView = document.getElementById('admin-view');
+const loginMsg = document.getElementById('login-msg');
+const adminBanner = document.getElementById('admin-banner');
+const adminError = document.getElementById('admin-error');
+const dbDebugPanel = document.getElementById('db-debug');
+const tableNav = document.getElementById('table-nav');
+const content = document.getElementById('content');
+const SYNE_STYLE_LG = "font-family:'Syne',sans-serif;font-size:22px;font-weight:800;letter-spacing:-.03em";
+const SYNE_STYLE_MD = "font-family:'Syne',sans-serif;font-size:18px;font-weight:800;letter-spacing:-.03em";
+
+document.getElementById('login-form').addEventListener('submit', doLogin);
+document.getElementById('logout-btn').addEventListener('click', function () { window.location.href = '/logout'; });
+document.getElementById('refresh-btn').addEventListener('click', function () { refreshCurrentTable(); });
+
+window.addEventListener('error', function (event) {
+  if (adminView && !adminView.classList.contains('hidden')) {
+    setError('Client error: ' + (event.message || 'Unexpected error'));
+  }
+});
+window.addEventListener('unhandledrejection', function (event) {
+  if (adminView && !adminView.classList.contains('hidden')) {
+    var reason = event.reason && (event.reason.message || event.reason.error || String(event.reason));
+    setError('Request error: ' + (reason || 'Unexpected failure'));
+  }
+});
+
+function safeJson(raw) {
+  try { return raw ? JSON.parse(raw) : null; } catch { return null; }
+}
+
+function escapeHtml(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function setMessage(el, message, kind) {
+  if (kind === void 0) kind = 'ok';
+  if (!el) return;
+  el.className = 'msg ' + (message ? kind : '');
+  el.textContent = message || '';
+  el.style.display = message ? 'block' : 'none';
+}
+
+function setBanner(message, ok) {
+  if (ok === void 0) ok = true;
+  adminBanner.className = ok ? 'banner' : 'error';
+  adminBanner.textContent = message || '';
+  adminBanner.style.display = message ? 'block' : 'none';
+}
+
+function setError(message) {
+  adminError.textContent = message || '';
+  adminError.style.display = message ? 'block' : 'none';
+}
+
+function renderDbDebugPanel() {
+  if (!dbDebugPanel) return;
+  if (!dbDebug) {
+    dbDebugPanel.innerHTML = '<div class="shell-info"><div class="shell-head"><div><div class="eyebrow" style="margin-bottom:8px">Database</div><div style="' + SYNE_STYLE_LG + '">Loading live database snapshot...</div></div><span class="chip">Inspecting</span></div><div class="subtle">Fetching the live Turso host and table counts for this admin session.</div></div>';
+    return;
+  }
+
+  var db = dbDebug.database || {};
+  var counts = dbDebug.counts || {};
+  var totalRows = Object.keys(counts).reduce(function (sum, key) { return sum + Number(counts[key] || 0); }, 0);
+  var countCards = TABLES.map(function (table) {
+    return '<div class="debug-stat"><div class="label">' + escapeHtml(table) + '</div><div class="value">' + escapeHtml(String(counts[table] ?? 0)) + ' rows</div></div>';
+  }).join('');
+
+  dbDebugPanel.innerHTML = '<div class="shell-info">' +
+    '<div class="shell-head">' +
+      '<div>' +
+        '<div class="eyebrow" style="margin-bottom:8px">Database</div>' +
+        '<div style="' + SYNE_STYLE_LG + '">Live Turso snapshot</div>' +
+      '</div>' +
+      '<span class="chip">' + escapeHtml(db.host || 'unknown host') + '</span>' +
+    '</div>' +
+    '<div class="debug-grid">' +
+      '<div class="debug-stat"><div class="label">Host</div><div class="value">' + escapeHtml(db.host || '-') + '</div></div>' +
+      '<div class="debug-stat"><div class="label">Database</div><div class="value">' + escapeHtml(db.database || db.pathname || '-') + '</div></div>' +
+      '<div class="debug-stat"><div class="label">Auth Token</div><div class="value">' + (dbDebug.has_auth_token ? 'Present' : 'Missing') + '</div></div>' +
+      '<div class="debug-stat"><div class="label">Rows Total</div><div class="value">' + escapeHtml(String(totalRows)) + '</div></div>' +
+    '</div>' +
+    '<div class="subtle" style="margin-top:12px">Snapshot time: ' + escapeHtml(dbDebug.timestamp || '-') + '</div>' +
+    '<div class="nav-title" style="margin-top:14px">Table Counts</div>' +
+    '<div class="debug-grid">' + countCards + '</div>' +
+  '</div>';
+}
+
+function clearSession(message) {
+  adminToken = '';
+  adminUser = null;
+  localStorage.removeItem(STORAGE_TOKEN);
+  localStorage.removeItem(STORAGE_USER);
+  setMessage(loginMsg, message || '', message ? 'err' : 'ok');
+  showLogin();
+}
+
+function showLogin() {
+  loginView.classList.remove('hidden');
+  adminView.classList.add('hidden');
+  adminBanner.style.display = 'none';
+  adminError.style.display = 'none';
+  document.body.style.overflow = 'auto';
+}
+
+function showAdmin() {
+  loginView.classList.add('hidden');
+  adminView.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  history.replaceState(null, '', '/admin');
+  document.getElementById('admin-user-name').textContent = adminUser && (adminUser.name || adminUser.email) || 'Admin';
+  document.getElementById('current-table-name').textContent = currentTable;
+}
+
+async function fetchJson(path, options) {
+  if (options === void 0) options = {};
+  var headers = { 'Content-Type': 'application/json' };
+  if (adminToken) headers.Authorization = 'Bearer ' + adminToken;
+  var response = await fetch(BASE + path, Object.assign({ headers: headers }, options));
+  var text = await response.text();
+  var data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = { success: false, error: 'Invalid server response' }; }
+  if (response.status === 401 || response.status === 403) {
+    clearSession(data && data.error || 'Session expired. Please sign in again.');
+    throw new Error(data && data.error || 'Unauthorized');
+  }
+  return data || {};
+}
+
+async function doLogin(event) {
+  event.preventDefault();
+  var email = document.getElementById('admin-email').value.trim();
+  var password = document.getElementById('admin-password').value;
+  if (!email || !password) {
+    setMessage(loginMsg, 'Email and password are required.', 'err');
+    return;
+  }
+  var btn = document.getElementById('login-btn');
+  btn.disabled = true;
+  btn.textContent = 'Signing in...';
+  setMessage(loginMsg, '', 'ok');
+  try {
+    var result = await fetchJson('/api/auth/admin-login', {
+      method: 'POST',
+      body: JSON.stringify({ email: email, password: password })
+    });
+    if (!result.success) throw new Error(result.error || 'Login failed');
+    adminToken = result.token;
+    adminUser = result.user;
+    localStorage.setItem(STORAGE_TOKEN, result.token);
+    localStorage.setItem(STORAGE_USER, JSON.stringify(result.user));
+    setMessage(loginMsg, 'Signed in successfully. Opening admin browser...', 'ok');
+    booted = true;
+    showAdmin();
+    await bootstrapAdmin();
+  } catch (err) {
+    setMessage(loginMsg, err.message || 'Login failed', 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Enter Console';
+  }
+}
+
+function renderNav() {
+  tableNav.innerHTML = ['User management','User activity','Stocks Config','Corporate actions','Tax settings','Leader board',...TABLES.filter(t=>t!=='users')].map(function (table) {
+    var active = table === currentTable ? 'active' : '';
+    var count = tableCounts[table];
+    var label = count === void 0 ? 'Open table' : count + ' rows';
+    return '<button class="table-btn ' + active + '" data-table="' + table + '" type="button">' +
+      '<b>' + escapeHtml(table) + '</b>' +
+      '<small>' + escapeHtml(label) + '</small>' +
+      '</button>';
+  }).join('');
+  tableNav.querySelectorAll('[data-table]').forEach(function (btn) {
+    btn.addEventListener('click', function () { loadTable(btn.getAttribute('data-table')); });
+  });
+  document.getElementById('current-table-name').textContent = currentTable;
+}
+
+function renderDefaultCard() {
+  content.innerHTML = '<div class="shell-info">' +
+    '<div class="shell-head">' +
+      '<div>' +
+        '<div class="eyebrow" style="margin-bottom:8px">Ready</div>' +
+        '<div style="' + SYNE_STYLE_LG + '">Pick a table from the left</div>' +
+      '</div>' +
+      '<span class="chip">Read only</span>' +
+    '</div>' +
+    '<div class="subtle">The left panel is fixed and always visible. Select any table to load it into the right panel and inspect the rows in a read-only grid.</div>' +
+  '</div>';
+}
+
+function formatCell(value) {
+  if (value === null || value === undefined || value === '') return '<span class="muted">-</span>';
+  return escapeHtml(value);
+}
+
+function renderTableView() {
+  document.getElementById('table-title').textContent = currentTable;
+  document.getElementById('table-meta').textContent = currentRows.length + ' rows - ' + currentSchema.length + ' columns - read only';
+  document.getElementById('current-table-name').textContent = currentTable;
+
+  var visibleCols = currentSchema.filter(function (col) {
+    return !(currentTable === 'users' && col.name === 'password');
+  });
+
+  if (!currentRows.length) {
+    content.innerHTML = '<div class="empty-state">No rows found in this table yet.</div>';
+    return;
+  }
+
+  var headerHtml = visibleCols.map(function (col) {
+    return '<th>' + escapeHtml(col.name.replace(/_/g, ' ')) + '</th>';
+  }).join('');
+
+  var rowsHtml = currentRows.map(function (row, index) {
+    var cellsHtml = visibleCols.map(function (col) {
+      return '<td>' + formatCell(row[col.name]) + '</td>';
+    }).join('');
+    return '<tr><td class="row-index">' + escapeHtml(String(index + 1)) + '</td>' + cellsHtml + '</tr>';
+  }).join('');
+
+  content.innerHTML = '<div class="shell-info">' +
+    '<div class="shell-head">' +
+      '<div>' +
+        '<div class="eyebrow" style="margin-bottom:8px">Table view</div>' +
+        '<div style="' + SYNE_STYLE_LG + '">' + escapeHtml(currentTable) + '</div>' +
+      '</div>' +
+      '<span class="chip">' + currentRows.length + ' rows</span>' +
+    '</div>' +
+    '<div class="table-box">' +
+      '<table>' +
+        '<thead><tr><th>#</th>' + headerHtml + '</tr></thead>' +
+        '<tbody>' + rowsHtml + '</tbody>' +
+      '</table>' +
+    '</div>' +
+  '</div>';
+}
+
+async function loadCounts() {
+  var result = await fetchJson('/api/admin/tables');
+  if (!result.success) throw new Error(result.error || 'Unable to load table counts');
+  tableCounts = {};
+  (result.tables || []).forEach(function (item) { tableCounts[item.name] = item.count; });
+  renderNav();
+}
+
+async function loadDbDebug() {
+  var result = await fetchJson('/api/admin/debug/db');
+  if (!result.success) throw new Error(result.error || 'Unable to load database snapshot');
+  dbDebug = result;
+  tableCounts = result.counts || {};
+  renderNav();
+  renderDbDebugPanel();
+}
+
+async function loadUserManagement(){
+  document.getElementById('table-title').textContent='User management';
+  document.getElementById('table-meta').textContent='Approve new signups, block access, or soft-delete accounts. Deleted accounts and their data are retained.';
+  const response=await fetchJson('/api/admin/users');if(!response.success)throw new Error(response.error||'Unable to load users');
+  content.innerHTML='<label for="user-search">Search users</label><input id="user-search" class="universe-input" type="search"><p id="user-action-message" role="status" aria-live="polite"></p><div style="overflow:auto"><table><thead><tr><th>Name</th><th>Email</th><th>Status</th><th>Signed up</th><th>Actions</th></tr></thead><tbody id="user-rows"></tbody></table></div>';
+  const body=document.getElementById('user-rows');
+  for(const user of response.data){
+    const row=document.createElement('tr');row.dataset.search=(user.name+' '+user.email+' '+user.account_status).toLowerCase();
+    for(const value of [user.name||'—',user.email,user.account_status,user.created_at||'—']){const cell=document.createElement('td');cell.textContent=value;row.append(cell);}
+    const actions=document.createElement('td');row.append(actions);body.append(row);
+    if(user.account_status==='deleted'){actions.textContent='Soft deleted';continue;}
+    for(const [action,label] of [['approve',user.account_status==='blocked'?'Unblock / Approve':'Approve'],['block','Block'],['delete','Soft delete']]){
+      if(action==='approve'&&user.account_status==='approved'||action==='block'&&user.account_status==='blocked')continue;
+      const button=document.createElement('button');button.type='button';button.className='btn btn-secondary';button.textContent=label;actions.append(button);
+      button.addEventListener('click',async()=>{
+        if(action==='delete'&&!confirm('Soft-delete '+user.email+'? Access will be removed; their data will be retained.'))return;
+        actions.querySelectorAll('button').forEach(b=>b.disabled=true);
+        try{const result=await fetchJson('/api/admin/users/'+user.id+'/access',{method:'PUT',body:JSON.stringify({action})});if(!result.success)throw new Error(result.error);await loadUserManagement();document.getElementById('user-action-message').textContent='User access updated.';}
+        catch(e){document.getElementById('user-action-message').textContent=e.message;actions.querySelectorAll('button').forEach(b=>b.disabled=false);}
+      });
+    }
+  }
+  document.getElementById('user-search').addEventListener('input',event=>{const q=event.target.value.toLowerCase();body.querySelectorAll('tr').forEach(row=>row.hidden=!row.dataset.search.includes(q));});
+  setBanner(response.data.length+' users loaded.',true);
+}
+let universeStocks=[];
+function setupAdminStockSearch(form){
+ const search=form.querySelector('#admin-stock-search'),list=form.querySelector('#admin-stock-suggestions'),status=form.querySelector('#admin-stock-search-status');
+ let version=0,timer,index=-1;
+ function close(){clearTimeout(timer);version++;index=-1;list.replaceChildren();search.setAttribute('aria-expanded','false');search.removeAttribute('aria-activedescendant');}
+ search.addEventListener('input',()=>{
+  close();const q=search.value.trim(),current=version;
+  if(q.length<2){status.textContent='Type at least 2 characters.';return;}
+  status.textContent='Searching Yahoo…';
+  timer=setTimeout(async()=>{
+   if(!form.isConnected)return;
+   try{
+    const result=await fetchJson('/api/admin/stocks/search?q='+encodeURIComponent(q));if(current!==version||!form.isConnected)return;
+    if(!result.success)throw new Error(result.error||'Search unavailable');
+    status.textContent=result.data.length?'Select a stock to fill the editable codes.':'No stocks found. Try an exact symbol ending .NS or .BO.';
+    result.data.forEach((stock,i)=>{
+     const option=document.createElement('div');option.id='admin-stock-option-'+i;option.className='stock-suggestion';option.setAttribute('role','option');option.setAttribute('aria-selected','false');option.textContent=stock.name+' | '+stock.exchange+' | '+stock.symbol;
+     option.addEventListener('mousedown',event=>event.preventDefault());
+     option.addEventListener('click',()=>{
+      const existing=universeStocks.find(row=>row.yahoo_finance_code===stock.symbol);
+      form.elements.code.value=existing?.code||stock.symbol.slice(0,-3);
+      form.elements.stock_code.value=existing?.stock_code||(stock.symbol.endsWith('.NS')?'NSE:':'BSE:')+stock.symbol.slice(0,-3);
+      form.elements.yahoo_finance_code.value=stock.symbol;search.value=stock.name+' | '+stock.symbol;close();
+      status.textContent='Review CODE and Stock Code, then click Add to Default watchlist.';form.elements.code.focus();
+     });list.append(option);
+    });search.setAttribute('aria-expanded',String(result.data.length>0));
+   }catch(error){if(current===version&&form.isConnected)status.textContent=error.message;}
+  },350);
+ });
+ search.addEventListener('keydown',event=>{
+  if(event.isComposing)return;
+  const options=[...list.children];
+  if(event.key==='Escape'||event.key==='Tab'){close();return;}
+  if(event.key==='Enter'){event.preventDefault();if(options.length)options[Math.max(index,0)].click();return;}
+  if(!options.length||!['ArrowDown','ArrowUp'].includes(event.key))return;
+  event.preventDefault();index=(index+(event.key==='ArrowDown'?1:-1)+options.length)%options.length;
+  options.forEach((option,i)=>option.setAttribute('aria-selected',String(i===index)));search.setAttribute('aria-activedescendant',options[index].id);options[index].scrollIntoView({block:'nearest'});
+ });
+}
+async function loadUniverseStockConfig(){
+  document.getElementById('table-title').textContent='Stocks Config';
+  document.getElementById('table-meta').textContent='Manage CODE, Stock Code and Yahoo Finance Code for the full stock universe. Add stocks to fetch their details from Yahoo Finance. New stocks join the Default watchlist. Use the Default watchlist checkbox to manage inclusion for all users.';
+  const result=await fetchJson('/api/admin/stock-config');
+  if(!result.success)throw new Error(result.error||'Unable to load the stock universe');
+  universeStocks=result.data;
+  content.innerHTML='<label for="universe-search">Search by stock name, CODE, Stock Code or Yahoo Finance Code</label><input id="universe-search" type="search" class="universe-input"><button id="universe-export" class="btn btn-secondary" type="button">Export Stocks CSV</button><div id="universe-message" role="status" aria-live="polite"></div><div style="overflow-x:auto"><table><thead><tr><th>Stock name</th><th>CODE</th><th>Stock Code</th><th>Yahoo Finance Code</th><th>Default watchlist</th><th>Action</th></tr></thead><tbody id="universe-rows"></tbody></table></div>';
+  const addForm=document.createElement('form');addForm.id='universe-add';addForm.method='post';
+  addForm.innerHTML='<fieldset><legend>Add stock to Default watchlist</legend><label for="admin-stock-search">Search Indian stocks on Yahoo</label><input id="admin-stock-search" name="search" type="search" class="universe-input" maxlength="80" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="admin-stock-suggestions"><div id="admin-stock-suggestions" role="listbox" aria-label="Indian stocks"></div><p id="admin-stock-search-status" role="status" aria-live="polite">Type a company name or Yahoo symbol, then review the codes before adding.</p><label for="add-code">CODE</label><input id="add-code" name="code" class="universe-input" required maxlength="100"><label for="add-stock-code">Stock Code</label><input id="add-stock-code" name="stock_code" class="universe-input" required maxlength="54"><label for="add-yahoo-code">Yahoo Finance Code</label><input id="add-yahoo-code" name="yahoo_finance_code" class="universe-input" required maxlength="54" placeholder="RELIANCE.NS or GRWRHITECH.BO"><button type="submit" class="btn btn-primary">Add to Default watchlist</button></fieldset>';
+  addForm.querySelectorAll('input').forEach(input=>{input.autocomplete='off';input.spellcheck=false;input.setAttribute('autocorrect','off');input.setAttribute('autocapitalize','off');});
+  content.prepend(addForm);
+  setupAdminStockSearch(addForm);
+  addForm.addEventListener('submit',async event=>{
+    event.preventDefault();const button=addForm.querySelector('button'),message=document.getElementById('universe-message');button.disabled=true;message.textContent='Fetching stock details from Yahoo Finance…';
+    try{const fields=Object.fromEntries(new FormData(addForm));
+    const existing=universeStocks.find(stock=>stock.yahoo_finance_code===fields.yahoo_finance_code.trim().toUpperCase());
+    let result;
+    if(existing){
+      result=await fetchJson('/api/admin/stock-config/'+encodeURIComponent(existing.ticker),{method:'PUT',body:JSON.stringify({...fields,expected_code:existing.code,expected_stock_code:existing.stock_code,expected_yahoo_finance_code:existing.yahoo_finance_code})});
+      if(!result.success)throw new Error(result.error||'Unable to save stock codes');
+      const included=await fetchJson('/api/admin/default-watchlist/'+encodeURIComponent(existing.ticker),{method:'PUT',body:JSON.stringify({included:true})});
+      if(!included.success)throw new Error(included.error||'Codes saved; unable to add to Default watchlist. Please retry.');
+    }else result=await fetchJson('/api/admin/stock-config',{method:'POST',body:JSON.stringify(fields)});
+    if(!result.success)throw new Error(result.error||'Unable to add stock');await loadUniverseStockConfig();document.getElementById('universe-message').textContent='Stock added to Default watchlist.'+(result.data.quote_error?' '+result.data.quote_error:'');}
+    catch(error){message.textContent=error.message;}finally{button.disabled=false;}
+  });
+  const body=document.getElementById('universe-rows');
+  universeStocks.forEach((stock,index)=>{
+    const row=document.createElement('tr');row.dataset.index=index;
+    const name=document.createElement('td');name.textContent=stock.name||stock.ticker;row.append(name);
+    for(const field of ['code','stock_code','yahoo_finance_code']){
+      const cell=document.createElement('td'),input=document.createElement('input');
+      input.id='universe-'+field+'-'+index;input.name=field;input.className='universe-input';input.value=stock[field]||'';input.maxLength=field==='code'?100:54;
+      input.setAttribute('aria-label',(field==='code'?'CODE':field==='stock_code'?'Stock Code':'Yahoo Finance Code')+' for '+(stock.name||stock.ticker));
+      input.setAttribute('autocorrect','off');input.setAttribute('autocapitalize','off');input.spellcheck=false;input.autocomplete='off';cell.append(input);row.append(cell);
+    }
+    const membership=document.createElement('td'),toggle=document.createElement('input');toggle.type='checkbox';toggle.checked=Number(stock.in_default_watchlist)!==0;toggle.setAttribute('aria-label','Include '+(stock.name||stock.ticker)+' in Default watchlist');membership.append(toggle);row.append(membership);
+    toggle.addEventListener('change',async()=>{
+      const included=toggle.checked;toggle.disabled=true;
+      try{const result=await fetchJson('/api/admin/default-watchlist/'+encodeURIComponent(stock.ticker),{method:'PUT',body:JSON.stringify({included})});if(!result.success)throw new Error(result.error||'Unable to update Default watchlist');stock.in_default_watchlist=included?1:0;document.getElementById('universe-message').textContent=included?'Added to Default watchlist for all users.':'Removed from Default watchlist for all users.';}
+      catch(error){toggle.checked=!included;document.getElementById('universe-message').textContent=error.message;}finally{toggle.disabled=false;}
+    });
+    const action=document.createElement('td'),form=document.createElement('form'),button=document.createElement('button');
+    form.id='universe-form-'+index;form.method='post';button.className='btn btn-primary';button.type='submit';button.textContent='Save';form.append(button);action.append(form);row.append(action);body.append(row);
+    row.querySelectorAll('input').forEach(input=>input.setAttribute('form',form.id));
+    form.addEventListener('submit',event=>{event.preventDefault();saveUniverseStock(index,button);});
+    const remove=document.createElement('button');remove.type='button';remove.className='btn btn-secondary';remove.textContent='Delete';remove.setAttribute('aria-label','Delete '+(stock.name||stock.ticker));action.append(remove);
+    remove.addEventListener('click',async()=>{
+      if(!confirm('Delete '+(stock.name||stock.ticker)+' from the stock universe and watchlists? Existing trades and portfolio holdings will be kept.'))return;
+      remove.disabled=true;
+      try{const result=await fetchJson('/api/admin/stock-config/'+encodeURIComponent(stock.ticker),{method:'DELETE'});if(!result.success)throw new Error(result.error||'Unable to delete stock');await loadUniverseStockConfig();document.getElementById('universe-message').textContent='Stock deleted.';}
+      catch(error){document.getElementById('universe-message').textContent=error.message;remove.disabled=false;}
+    });
+  });
+  document.getElementById('universe-search').addEventListener('input',event=>{
+    const q=event.target.value.trim().toLowerCase();
+    body.querySelectorAll('tr').forEach(row=>{const stock=universeStocks[Number(row.dataset.index)];row.hidden=![stock.name,stock.ticker,stock.code,stock.stock_code,stock.yahoo_finance_code].join(' ').toLowerCase().includes(q);});
+  });
+  document.getElementById('universe-export').addEventListener('click',exportUniverseStocks);
+  const validateButton=document.createElement('button');validateButton.id='universe-validate-yahoo';validateButton.type='button';validateButton.className='btn btn-secondary';validateButton.textContent='Yahoo Finance Code Validation';
+  document.getElementById('universe-export').after(validateButton);
+  validateButton.addEventListener('click',()=>validateUniverseYahooCodes(validateButton));
+  body.querySelectorAll('input[name="yahoo_finance_code"]').forEach(input=>input.addEventListener('input',()=>{
+    const row=input.closest('tr');row.dataset.validationRevision=String(Number(row.dataset.validationRevision||0)+1);setUniverseYahooValidation(row,'','Code changed. Validate again.');
+  }));
+  setBanner(universeStocks.length+' universe stocks loaded.',true);
+}
+function setUniverseYahooValidation(row,status,message){
+  row.dataset.yahooValidation=status;
+  row.classList.toggle('yahoo-code-invalid',status==='invalid');
+  const input=row.querySelector('input[name="yahoo_finance_code"]');
+  input.setAttribute('aria-invalid',String(status==='invalid'));
+  let note=row.querySelector('.yahoo-validation-note');
+  if(!note){note=document.createElement('div');note.className='yahoo-validation-note';note.id='yahoo-validation-'+row.dataset.index;input.after(note);input.setAttribute('aria-describedby',note.id);}
+  note.textContent=message;
+}
+async function validateUniverseYahooCodes(button){
+  const body=document.getElementById('universe-rows'),message=document.getElementById('universe-message');
+  const rows=[...body.querySelectorAll('tr')].filter(row=>!row.hidden);
+  if(!rows.length){message.textContent='No displayed stocks to validate.';return;}
+  const entries=rows.map(row=>({row,code:row.querySelector('input[name="yahoo_finance_code"]').value,revision:row.dataset.validationRevision||'0'}));
+  button.disabled=true;let checked=0;
+  try{
+    for(let start=0;start<entries.length;start+=5){
+      if(!body.isConnected)return;
+      message.textContent='Validating Yahoo Finance codes: '+checked+' / '+entries.length+'…';
+      const batch=entries.slice(start,start+5);
+      let results;
+      try{
+        const response=await fetchJson('/api/admin/stock-config/validate-yahoo',{method:'POST',body:JSON.stringify({codes:batch.map(entry=>entry.code)})});
+        if(!response.success||!Array.isArray(response.data)||response.data.length!==batch.length)throw new Error(response.error||'Validation unavailable');
+        results=response.data;
+      }catch{results=batch.map(entry=>({code:entry.code,status:'unavailable',message:'Could not validate. Retry validation.'}));}
+      if(!body.isConnected)return;
+      batch.forEach((entry,index)=>{
+        if(entry.row.isConnected&&(entry.row.dataset.validationRevision||'0')===entry.revision&&entry.row.querySelector('input[name="yahoo_finance_code"]').value===entry.code){
+          const result=results[index];setUniverseYahooValidation(entry.row,result.status,result.message);
+        }
+      });
+      checked+=batch.length;
+      [...body.children].sort((a,b)=>Number(b.dataset.yahooValidation==='invalid')-Number(a.dataset.yahooValidation==='invalid')||Number(a.dataset.index)-Number(b.dataset.index)).forEach(row=>body.append(row));
+    }
+    const count=status=>rows.filter(row=>row.dataset.yahooValidation===status).length;
+    const valid=count('valid'),invalid=count('invalid'),unavailable=count('unavailable');
+    message.textContent='Validation complete: '+valid+' valid, '+invalid+' invalid, '+unavailable+' could not be checked, '+(rows.length-valid-invalid-unavailable)+' changed during validation. Invalid rows are highlighted red at the top. Correct the codes and Save.';
+  }finally{button.disabled=false;}
+}
+async function saveUniverseStock(index,button){
+  const stock=universeStocks[index],message=document.getElementById('universe-message');
+  const code=document.getElementById('universe-code-'+index).value.trim(),stock_code=document.getElementById('universe-stock_code-'+index).value.trim().toUpperCase();
+  const yahoo_finance_code=document.getElementById('universe-yahoo_finance_code-'+index).value.trim().toUpperCase();
+  button.disabled=true;message.textContent='Saving…';
+  try{
+    const response=await fetchJson('/api/admin/stock-config/'+encodeURIComponent(stock.ticker),{method:'PUT',body:JSON.stringify({code,stock_code,yahoo_finance_code,expected_yahoo_finance_code:stock.yahoo_finance_code,expected_code:stock.code,expected_stock_code:stock.stock_code})});
+    if(!response.success)throw new Error(response.error||'Save failed');
+    universeStocks[index]={...stock,...response.data};message.textContent='Saved '+(stock.name||stock.ticker)+'.';
+    document.getElementById('universe-stock_code-'+index).value=response.data.stock_code;
+    document.getElementById('universe-code-'+index).value=response.data.code;
+    document.getElementById('universe-yahoo_finance_code-'+index).value=response.data.yahoo_finance_code;
+  }catch(error){message.textContent=error.message;}finally{button.disabled=false;}
+}
+function exportUniverseStocks(){
+  const rows=[['Stock Code','Stock Name','CODE','Yahoo Finance Code'],...universeStocks.map(s=>[s.stock_code,s.name,s.code,s.yahoo_finance_code])];
+  const csv=rows.map(row=>row.map(value=>{let text=String(value??'');if(/^\s*[=+@-]/.test(text))text="'"+text;return '"'+text.replace(/"/g,'""')+'"';}).join(',')).join('\r\n');
+  const url=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'})),link=document.createElement('a');link.href=url;link.download='onepiece-universe-stocks.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+async function loadTable(table) {
+  currentTable = table;
+  setError('');
+  setBanner('Loading ' + table + '...', true);
+  renderNav();
+  content.innerHTML = '<div class="panel"><div class="shell-head"><div><div style="' + SYNE_STYLE_MD + '">Loading ' + escapeHtml(table) + '</div><div class="subtle">Fetching schema and rows from the backend...</div></div><span class="chip">Loading</span></div><div class="empty-state">Please wait while the table loads.</div></div>';
+  try {
+    if(table==='User activity'){await loadAdminActivity();return;}
+    if(table==='Corporate actions'){await loadCorporateActionsAdmin();return;}
+    if(table==='Tax settings'){await loadTaxAdmin();return;}
+    if(table==='User management'){await loadUserManagement();return;}
+    if(table==='Stocks Config'){await loadUniverseStockConfig();return;}
+    if(table==='Leader board'){
+      var ranking=await fetchJson('/api/admin/leaderboard');if(!ranking.success)throw new Error(ranking.error);
+      document.getElementById('table-title').textContent='Leader board';document.getElementById('table-meta').textContent='Portfolio XIRR • Updated '+new Date(ranking.as_of).toLocaleString();
+      content.innerHTML='<div style="overflow:auto"><table><thead><tr><th>Rank</th><th>User</th><th>Email</th><th>XIRR</th><th>Status</th></tr></thead><tbody>'+ranking.data.map(row=>'<tr><td>'+(row.rank??'—')+'</td><td>'+escapeHtml(row.name)+'</td><td>'+escapeHtml(row.email)+'</td><td>'+(row.xirr_pct===null?'—':row.xirr_pct.toFixed(2)+'%')+'</td><td>'+escapeHtml(row.status)+'</td></tr>').join('')+'</tbody></table></div>';setBanner('Leader board loaded.',true);return;
+    }
+    var result = await fetchJson('/api/admin/table/' + table);
+    if (!result.success) throw new Error(result.error || 'Unable to load table');
+    currentSchema = result.columns || [];
+    currentRows = result.rows || [];
+    setBanner(table + ' loaded.', true);
+    setError('');
+    renderTableView();
+    if (!currentRows.length) {
+      setBanner('"' + table + '" is empty. This view is read only.', true);
+    }
+  } catch (err) {
+    setError(err.message || 'Unable to load table');
+    content.innerHTML = '<div class="panel"><div class="shell-head"><div><div style="' + SYNE_STYLE_MD + '">Unable to load ' + escapeHtml(table) + '</div><div class="subtle">The backend returned an error. Try Refresh or select a different table.</div></div><span class="chip">Error</span></div><div class="empty-state">' + escapeHtml(err.message || 'Unknown error') + '</div></div>';
+  }
+}
+
+async function refreshCurrentTable() {
+  if (!adminToken) return showLogin();
+  await loadDbDebug();
+  await loadTable(currentTable);
+}
+
+async function bootstrapAdmin() {
+  if (!booted) {
+    tableNav.innerHTML = TABLES.map(function (table) {
+      return '<button class="table-btn ' + (table === currentTable ? 'active' : '') + '" data-table="' + table + '" type="button"><b>' + escapeHtml(table) + '</b><small>Open table</small></button>';
+    }).join('');
+    renderNav();
+    tableNav.querySelectorAll('[data-table]').forEach(function (btn) {
+      btn.addEventListener('click', function () { loadTable(btn.getAttribute('data-table')); });
+    });
+    booted = true;
+  }
+
+  if (adminToken) {
+    showAdmin();
+    try {
+      var me = await fetchJson('/api/auth/admin-me');
+      if (!me.success) throw new Error(me.error || 'Session invalid');
+      adminUser = me.user || adminUser;
+      localStorage.setItem(STORAGE_USER, JSON.stringify(adminUser));
+      document.getElementById('admin-user-name').textContent = (adminUser && (adminUser.name || adminUser.email)) || 'Admin';
+      renderDefaultCard();
+      dbDebug = null;
+      renderDbDebugPanel();
+      await loadDbDebug();
+      await loadTable(currentTable);
+    } catch (err) {
+      clearSession(err.message || 'Session expired. Please sign in again.');
+    }
+  } else {
+    showLogin();
+  }
+}
+
+window.addEventListener('hashchange', function () {
+  if (location.hash === '#logout') window.location.href = '/logout';
+});
+
+bootstrapAdmin();
+</script>
+</body>
+</html>

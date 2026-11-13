@@ -11,6 +11,31 @@
 
 ## Quick Start
 
+### Password reset email
+
+Users can select **Forgot password?** on the sign-in screen, request a six-digit
+email code, verify it, and choose a new password. Configure `RESEND_API_KEY` and
+`PASSWORD_RESET_FROM` in the server environment; the sender must belong to a
+verified Resend domain. See [Resend email setup](https://resend.com/docs/api-reference/emails/send-email).
+Use a strong, private `JWT_SECRET`. Environment files are not automatically loaded
+by this app; supply these variables through your host or process environment.
+
+The database tables are created automatically on startup. Codes expire after ten
+minutes, allow five guesses, and are consumed on verification. Resends have a
+60-second cooldown and a five-per-hour limit per email; requests also have a
+30-per-hour limit per client IP. Verified reset sessions expire after ten minutes.
+Successful resets revoke existing user sessions without changing account approval.
+Blocked, deleted, and system accounts cannot reset through this flow. Provider
+failures are logged without codes or credentials and receive the same generic
+response as unknown emails. Monitor these logs when diagnosing missing emails.
+
+API: POST `/api/auth/password-reset/request` with `{email}`, POST
+`/api/auth/password-reset/verify` with `{email,code}` (code is a six-digit string),
+then POST `/api/auth/password-reset/reset` with `{reset_token,password}`. Passwords
+must contain at least eight characters and fit within bcrypt's 72-byte limit.
+Only trust a reverse proxy for client-IP limits if its topology is explicitly
+configured in Express; forwarded headers are not trusted by default.
+
 ```bash
 # 1. Install dependencies
 npm install

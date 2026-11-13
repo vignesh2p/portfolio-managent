@@ -1,0 +1,14 @@
+const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
+const html=fs.readFileSync('onepiece.html','utf8');
+for(const [,script] of html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g))new vm.Script(script);
+const source=html.slice(html.indexOf('function daysSinceAth('),html.indexOf('function renderWatchlistTable('));
+const ctx={Intl,Date};vm.createContext(ctx);vm.runInContext(source,ctx);
+assert.equal(ctx.daysSinceAth('2024-02-28',new Date('2024-03-01T00:00:00Z')),2);
+assert.equal(ctx.daysSinceAth('2026-10-24',new Date('2026-10-24T18:30:00Z')),1);
+assert.equal(ctx.daysSinceAth('2026-10-25',new Date('2026-10-24T18:30:00Z')),0);
+for(const value of [null,'','2026-02-30','2026-13-01','2099-01-01'])assert.equal(ctx.daysSinceAth(value,new Date('2026-10-25T00:00:00Z')),null);
+const rows=[{ath_date:null},{ath_date:'2026-10-20'},{ath_date:'2024-01-01'}];
+assert.equal(ctx.sortByDaysSinceAth(rows)[0].ath_date,'2026-10-20');
+assert.equal(ctx.sortByDaysSinceAth(rows)[2].ath_date,null);
+assert.equal(rows[0].ath_date,null);
+console.log('Inline JavaScript syntax and ATH calendar-day/sort checks passed.');

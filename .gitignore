@@ -1,4 +1,16 @@
 node_modules/
+test-artifacts/
+*.inspect.ndjson
 .vercel/
 portflow.db
 npm-debug.log*
+.env
+.env.local
+.env.production
+
+.vercel
+
+.vercel.backup/
+.env.*
+!.env.example
+
