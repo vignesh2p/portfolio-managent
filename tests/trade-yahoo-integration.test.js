@@ -26,7 +26,24 @@ test('HTTP trades preserve edited tickers, require import Yahoo codes and price 
  holdings=(await call('/api/portfolio')).data.holdings;assert.equal(holdings[0].shares,4);assert.equal(holdings[0].avg_price,40);
  const opp=await call('/api/portfolio-opportunities');assert.equal(opp.data.rows.length,1);assert.equal(opp.data.rows[0].price,80);
  const sip=await call('/api/stock/MY-TEST/sip');assert.equal(sip.success,true,sip.error);
- assert.equal(sip.data.totalDeployable,opp.data.rows[0].levels.find(l=>l.active).suggested_amount);
+ assert.equal(sip.data.totalDeployable,17500);
+ assert.equal(opp.data.rows[0].levels.find(l=>l.active).allocated_amount,10000);
  const list=await call('/api/watchlists','POST',{name:'My stocks',tickers:['TEST.NS']});assert.equal(list.success,true,list.error);
  assert.equal((await call('/api/portfolio-opportunities?scope=watchlist&watchlist_id='+list.data.id)).data.rows.length,0);
+ const sell={...trade,type:'SELL',traded_at:'2026-11-05'};
+ const rejected=await call('/api/trades','POST',{...sell,shares:5});
+ assert.equal(rejected.status,400);assert.match(rejected.error,/You hold 4 shares/);
+ const missing=await call('/api/trades','POST',{...sell,ticker:'UNOWNED',yahoo_finance_code:''});
+ assert.equal(missing.status,400);assert.match(missing.error,/only sell stocks you hold/);
+ const sales=await call('/api/trades/import','POST',{trades:[{...sell,ticker:'NSE:TEST',shares:5},{...sell,ticker:'NSE:TEST',shares:1}]});
+ assert.equal(sales.summary.imported,1);assert.equal(sales.summary.skipped,1);
+ assert.match(sales.errors[0],/You hold 4 shares/);
+ assert.equal((await call('/api/trades','POST',{...sell,ticker:'NSE:TEST',shares:3})).success,true);
+ assert.equal((await call('/api/trades','POST',{...sell,shares:1})).status,400);
+ assert.equal((await database.execute("SELECT COUNT(*) AS n FROM portfolio WHERE user_id=999")).rows[0].n,0);
+ assert.equal((await database.execute("SELECT COUNT(*) AS n FROM trade_history WHERE user_id=999 AND type='SELL'")).rows[0].n,2);
+
+ const history=await call('/api/portfolio-history');assert.equal(history.success,true);assert.deepEqual(history.data,[]);
+ assert.equal((await fetch(base+'/api/portfolio-history')).status,401);
+
 });

@@ -1,0 +1,100 @@
+const {chromium}=require(process.env.PLAYWRIGHT_PATH||'playwright');
+const fs=require('fs'),path=require('path'),assert=require('node:assert/strict');
+const {buildResults}=require('../quarterly-results');
+const root=path.join(__dirname,'..');fs.mkdirSync(path.join(root,'test-artifacts'),{recursive:true});
+function fixture(ticker){
+ const raw=Array.from({length:12},(_,i)=>({date:new Date(Date.UTC(2023,12+i*3,0)).toISOString(),periodType:'3M',totalRevenue:(100+i*8)*1e8,costOfRevenue:45e8,operatingExpense:23e8,pretaxIncome:25e8,taxProvision:6e8,netIncome:i===8?-3e8:(18+i)*1e8,dilutedEPS:3+i*.2,salariesAndWages:10e8,sellingGeneralAndAdministration:6e8}));
+ if(ticker==='TCS.NS')raw.pop();
+ const data=buildResults(ticker,raw,[],{pe:24.5,price:376,price_currency:ticker.endsWith('.NS')?'INR':'USD',latest_result_date:ticker==='UNDATED'?null:'2026-10-20',currency:ticker.endsWith('.NS')?'INR':'USD',name:({'RELIANCE.NS':'Reliance Industries','TCS.NS':'Tata Consultancy Services','AAPL':'Apple Inc.'})[ticker]||ticker},new Date('2026-11-01'));
+ return {...data,fetched_at:'2026-11-01T05:00:00.000Z'};
+}
+(async()=>{
+ const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
+ try{for(const width of [390,1440]){
+  const page=await browser.newPage({viewport:{width,height:1000}}),errors=[];
+  page.on('pageerror',e=>errors.push(e.stack));
+  await page.route('**/*',async route=>{
+   const u=new URL(route.request().url());if(u.hostname!=='onepiece.test')return route.abort();
+   if(u.pathname.startsWith('/api/')){
+    let json={success:true,data:[]};
+    if(u.pathname==='/api/results/portfolio')json.data=[{ticker:'TCS.NS',name:'Tata Consultancy Services'},{ticker:'RELIANCE.NS',name:'Reliance Industries'}];
+    else if(u.pathname==='/api/watchlists')json.data=[{id:1,name:'Default watchlist'},{id:2,name:'Tech'},{id:3,name:'Empty'},{id:4,name:'Undated'}];
+    else if(u.pathname==='/api/watchlists/1/stocks')json.data=[{ticker:'APPLE',yahoo_finance_code:'AAPL',name:'Apple'}];
+    else if(u.pathname==='/api/watchlists/2/stocks')json.data=[{ticker:'TCS',stock_code:'NSE:TCS',name:'TCS'}];
+    else if(u.pathname==='/api/watchlists/4/stocks')json.data=[{ticker:'UNDATED',yahoo_finance_code:'UNDATED',name:'Undated stock'}];
+    else if(u.pathname==='/api/results/search')json.data=[{ticker:'AAPL',name:'Apple Inc.',exchange:'NASDAQ'}];
+    else if(u.pathname.endsWith('/quarterly')){const ticker=decodeURIComponent(u.pathname.split('/')[3]);json=ticker==='FAIL'?{success:false,error:'No quarterly income statements are available for this ticker.'}:{success:true,data:fixture(ticker)};}
+    else if(u.pathname==='/api/portfolio')json.data={holdings:[],xirr_eligible:false};
+    else if(u.pathname==='/api/sip-config')json.data={max_budget:50000,levels:[]};
+    return route.fulfill({json});
+   }
+   const file=path.join(root,u.pathname==='/'?'onepiece.html':u.pathname.slice(1));
+   return route.fulfill({body:fs.readFileSync(file),contentType:file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html'});
+  });
+  await page.goto('https://onepiece.test/');await page.evaluate(()=>{TOKEN='test';USERINFO={name:'Test'};showApp();});
+  if(width<921)await page.locator('#navigation-toggle').click();
+  await page.getByRole('button',{name:'Results Analysis',exact:true}).click();await page.getByText(/2 stocks checked/).waitFor();
+  assert.equal(await page.getByRole('tab',{name:'Result Calendar',exact:true}).getAttribute('aria-selected'),'true');
+  assert.equal(await page.locator('#qr-source').inputValue(),'portfolio');
+  await page.getByRole('button',{name:'Latest results',exact:true}).click();
+  const resultDay=page.locator('[data-date="2026-10-20"]');
+  assert.match(await resultDay.getAttribute('class'),/qr-has-results/);
+  assert.match(await resultDay.getAttribute('aria-label'),/2 results/);
+  await resultDay.click();assert.equal(await page.locator('#qr-day-results > details:not([hidden])').count(),2);
+  await page.locator('#qr-day-results > details:not([hidden]) summary').first().click();
+  assert.equal(await page.locator('#qr-day-results > details[open]').count(),1);
+  await page.locator('[data-date="2026-10-21"]').click();await page.getByText('No available results for this date.',{exact:true}).waitFor();
+  assert.equal(await page.locator('#qr-day-results > details:not([hidden])').count(),0);
+  await page.getByRole('button',{name:'Next month',exact:true}).click();assert.equal(await page.locator('#qr-month-title').innerText(),'November 2026');
+  await page.getByRole('button',{name:'Previous month',exact:true}).click();await page.locator('[data-date="2026-10-20"]').click();
+  await page.locator('#qr-source').selectOption('1');await page.getByText(/1 stocks checked/).waitFor();
+  await page.locator('[data-date="2026-10-20"]').click();assert.equal(await page.locator('#qr-day-results > details:not([hidden])').count(),1);assert.match(await page.locator('#qr-day-results').innerText(),/Apple/);
+  await page.locator('#qr-source').selectOption('3');await page.getByText('No stocks in this watchlist yet.',{exact:true}).waitFor();assert.equal(await page.locator('.qr-has-results').count(),0);
+  await page.locator('#qr-source').selectOption('4');await page.getByText(/1 stocks checked/).waitFor();
+  assert.equal(await page.locator('.qr-has-results').count(),0);assert.match(await page.locator('#qr-calendar-note').innerText(),/1 of 1 stocks have no available result date/);
+  assert.equal(await page.getByRole('button',{name:'Latest results',exact:true}).isDisabled(),true);
+  await page.locator('#qr-source').selectOption('portfolio');await page.getByText(/2 stocks checked/).waitFor();
+  await page.getByRole('button',{name:'Latest results',exact:true}).click();
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);
+  await page.evaluate(()=>{document.activeElement?.blur();window.scrollTo(0,0);});
+  await page.screenshot({path:path.join(root,'test-artifacts',`quarterly-calendar-${width}.png`),fullPage:true});
+  await page.getByRole('tab',{name:'Result Calendar',exact:true}).focus();await page.keyboard.press('ArrowRight');
+  assert.equal(await page.getByRole('tab',{name:'Portfolio Results',exact:true}).getAttribute('aria-selected'),'true');
+  assert.match(await page.locator('#qr-portfolio > details').first().locator('summary').first().innerText(),/Reliance/);
+  assert.equal(await page.locator('#qr-source').inputValue(),'portfolio');
+  const summary=page.locator('#qr-portfolio > details').first().locator('summary').first();
+  assert.match(await summary.innerText(),/20 Oct 2026/);assert.match(await summary.innerText(),/20PE → 19.18PE/);assert.match(await summary.innerText(),/YoY growth %/);assert.match(await summary.innerText(),/Net profit/);
+  assert.equal(await page.locator('#qr-portfolio > details[open]').count(),0);
+  const stock=page.locator('#qr-portfolio > details').first();await stock.locator('summary').first().click();
+  assert.equal(await stock.locator('.qr-table thead th').count(),10);assert.equal(await stock.locator('.qr-table tbody tr:not([hidden])').count(),12);
+  const sales=stock.getByRole('button',{name:'Sales',exact:true});await sales.click();assert.equal(await sales.getAttribute('aria-expanded'),'true');assert.equal(await stock.locator('.qr-table tbody tr:not([hidden])').count(),15);
+  await stock.getByRole('button',{name:'YoY Growth %',exact:true}).click();assert.ok(await stock.locator('.qr-growth').count()>0);
+  await stock.getByRole('button',{name:'QoQ Growth %',exact:true}).click();assert.match(await stock.locator('.qr-growth').first().innerText(),/YoY/);
+  const firstCell=stock.locator('.qr-table tbody tr').first().locator('td').first();const crores=await firstCell.locator('span').first().innerText();
+  await stock.getByLabel('Display units',{exact:true}).selectOption('raw');assert.notEqual(await firstCell.locator('span').first().innerText(),crores);
+  await stock.getByLabel('Display units',{exact:true}).selectOption('crores');
+  assert.equal(await stock.locator('.qr-charts svg').count(),3);assert.ok(await stock.locator('.qr-negative').count()>0);
+  const table=stock.locator('.qr-table-wrap');await table.evaluate(e=>{e.scrollLeft=600;});
+  const sticky=await stock.locator('.qr-table tbody th').first().evaluate(e=>getComputedStyle(e).position);assert.equal(sticky,'sticky');
+  await table.evaluate(e=>{e.scrollLeft=0;});
+  const downloadPromise=page.waitForEvent('download');await stock.getByRole('button',{name:'Download CSV'}).click();const download=await downloadPromise;
+  const file=path.join(root,'test-artifacts',`quarterly-${width}.csv`);await download.saveAs(file);const csv=fs.readFileSync(file,'utf8');assert.match(csv,/TTM/);assert.match(csv,/Material Costs/);assert.match(csv,/Raw PDF/);
+  assert.equal(await page.locator('#qr-explore-heading').isVisible(),false);
+  await page.evaluate(()=>{document.activeElement?.blur();window.scrollTo(0,0);});
+  await page.screenshot({path:path.join(root,'test-artifacts',`quarterly-results-${width}.png`),fullPage:true});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);
+  await page.locator('#qr-search').fill('ap');await page.locator('#qr-suggestions [role=option]').first().waitFor();await page.locator('#qr-search').press('ArrowDown');await page.locator('#qr-search').press('Enter');
+  await page.locator('#qr-explore .qr-table').waitFor();assert.equal(await page.locator('#qr-explore select').inputValue(),'millions');
+  await page.locator('#qr-search').fill('FAIL');await page.getByRole('button',{name:'View results'}).click();await page.getByText('No quarterly income statements are available for this ticker.',{exact:true}).waitFor();
+  await page.locator('#qr-refresh').click();await page.getByText(/2 stocks checked/).waitFor();
+  await page.locator('#qr-source').selectOption('1');await page.getByText(/1 stocks checked/).waitFor();
+  assert.match(await page.locator('#qr-portfolio').innerText(),/Apple/);
+  await page.locator('#qr-refresh').click();await page.getByText(/1 stocks checked/).waitFor();assert.equal(await page.locator('#qr-source').inputValue(),'1');
+  await page.locator('#qr-source').selectOption('2');await page.getByText(/1 stocks checked/).waitFor();assert.match(await page.locator('#qr-portfolio').innerText(),/Tata Consultancy/);
+  await page.locator('#qr-source').selectOption('3');await page.locator('#qr-portfolio .qr-empty').waitFor();
+  await page.locator('#qr-source').selectOption('portfolio');await page.getByText(/2 stocks checked/).waitFor();
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);
+  await page.screenshot({path:path.join(root,'test-artifacts',`quarterly-summary-${width}.png`),fullPage:true});
+  assert.deepEqual(errors,[]);console.log('Quarterly accordion, growth, units, sticky table, charts, CSV, search and retry UI passed at '+width+'px');await page.close();
+ }}finally{await browser.close();}
+})().catch(e=>{console.error(e);process.exit(1);});

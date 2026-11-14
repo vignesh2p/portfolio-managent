@@ -9,26 +9,40 @@ function daysSince(date,now=new Date()){
  const days=Math.round((Date.parse(indiaDate(now)+'T00:00:00Z')-ms)/86400000);
  return days>=0?days:null;
 }
-function sourceRows(holdings,stocks,match,now){
- return holdings.filter(h=>Number(h.shares)>0).map(h=>{const s=match(h,stocks);return {...h,name:s?.name||h.stock_name||h.ticker,code:s?.code||h.ok_code||'',stock_code:s?.stock_code||h.ticker,price:s?.price??null,ath_drop_pct:Number.isFinite(s?.price)&&s.price>0&&Number.isFinite(s?.ath)&&s.ath>0?(s.price/s.ath-1)*100:null,ath_date:s?.ath_date||null,days_since:daysSince(s?.ath_date,now),invested_amount:Number(h.shares)*Number(h.avg_price),market_value:Number.isFinite(s?.price)&&s.price>0?Number(h.shares)*s.price:null,quote_error:s?.quote_error||null};}).filter(h=>h.days_since>365).sort((a,b)=>a.days_since-b.days_since);
+function sourceRows(holdings,stocks,match,now,targetGrowth=30,athAgeDays=365){
+ return holdings.filter(h=>Number(h.shares)>0).map(h=>{const s=match(h,stocks);return {...h,name:s?.name||h.stock_name||h.ticker,code:s?.code||h.ok_code||'',stock_code:s?.stock_code||h.ticker,price:s?.price??null,ath_drop_pct:Number.isFinite(s?.price)&&s.price>0&&Number.isFinite(s?.ath)&&s.ath>0?(s.price/s.ath-1)*100:null,ath_date:s?.ath_date||null,days_since:daysSince(s?.ath_date,now),invested_amount:Number(h.shares)*Number(h.avg_price),market_value:Number.isFinite(s?.price)&&s.price>0?Number(h.shares)*s.price:null,quote_error:s?.quote_error||null};}).filter(h=>h.days_since>athAgeDays&&Number.isFinite(h.xirr_pct)&&h.xirr_pct<targetGrowth).sort((a,b)=>a.days_since-b.days_since);
 }
 function candidates(stocks,holdings,levels,allowed,source,match,now){
  const master=match(source,stocks);
  return stocks.filter(s=>s.ticker!==master?.ticker&&s.ticker!==source.ticker&&allowed.has(s.ticker)&&String(s.stock_code||'').trim()&&Number.isFinite(s.price)&&s.price>0&&s.ath>0).map(s=>{
   const zone=levels.find((l,i)=>s.price<=s.ath*(1+Number(l.fall)/100)&&s.price>(levels[i+1]?s.ath*(1+Number(levels[i+1].fall)/100):0));
-  if(!zone)return null;
-  const owned=holdings.find(h=>match(h,stocks)?.ticker===s.ticker);
-  return {ticker:owned?.ticker||s.ticker,name:s.name,code:s.code,stock_code:s.stock_code,price:s.price,fall:Number(zone.fall),allocation:Number(zone.allocation),drop_pct:(s.price/s.ath-1)*100,days_since:daysSince(s.ath_date,now),quote_error:s.quote_error||null};
+  if(!zone||!(Number(zone.allocation)>0))return null;
+  const owned=holdings.find(h=>Number(h.shares)>0&&match(h,stocks)?.ticker===s.ticker);
+  return {ticker:owned?.ticker||s.ticker,in_portfolio:!!owned,name:s.name,code:s.code,stock_code:s.stock_code,price:s.price,fall:Number(zone.fall),allocation:Number(zone.allocation),drop_pct:(s.price/s.ath-1)*100,days_since:daysSince(s.ath_date,now),quote_error:s.quote_error||null};
  }).filter(row=>row&&row.days_since!==null&&row.days_since<100).sort((a,b)=>b.fall-a.fall||(a.days_since??Infinity)-(b.days_since??Infinity)||a.ticker.localeCompare(b.ticker));
+}
+function betaCandidates(rows,stocks,holdings,source,match,now){
+ const sourceIdentity=match(source,stocks)?.ticker||source.ticker;
+ return rows.flatMap(row=>{
+  const stock=match(row,stocks),identity=stock?.ticker||row.ticker;
+  const level=row.levels.find(level=>level.active);
+  const age=daysSince(row.ath_date,now);
+  if(identity===sourceIdentity||!level||level.investment_error||!(level.suggested_quantity>0)||!(level.suggested_investment>0)||!(row.price>0)||age===null||age>=100)return [];
+  const owned=holdings.find(h=>Number(h.shares)>0&&(match(h,stocks)?.ticker||h.ticker)===identity);
+  return [{ticker:owned?.ticker||row.ticker,in_portfolio:!!owned,name:row.name,code:row.ok_code,stock_code:stock?.stock_code,
+   price:row.price,fall:level.fall,allocation:level.allocation,drop_pct:row.fall_pct,days_since:age,quote_error:row.quote_error,
+   suggested_investment:level.suggested_investment,suggested_quantity:level.suggested_quantity,
+   carry_forward_amount:level.carry_forward_amount,total_invested:level.total_invested,max_budget:row.max_budget,beta_cycle:row.beta_cycle}];
+ }).sort((a,b)=>b.fall-a.fall||a.days_since-b.days_since||a.ticker.localeCompare(b.ticker));
 }
 function combinations(rows,budget){
  if(!(budget>0))return [];
  const result=[],seen=new Set();
  function add(picks){
   const key=picks.map(p=>p.ticker).sort().join('|');if(seen.has(key))return;seen.add(key);
-  const weight=picks.reduce((s,p)=>s+p.allocation,0);
+  const weight=picks.reduce((s,p)=>s+(p.suggested_investment??p.allocation),0);
   if(!(weight>0))return;
-  const buys=picks.map(p=>({...p,shares:Math.floor(Math.min(budget*p.allocation/weight,p.suggested_amount ?? Infinity)/p.price)}));
+  const buys=picks.map(p=>({...p,shares:Math.floor(Math.min(budget*(p.suggested_investment??p.allocation)/weight,p.suggested_investment??Infinity)/p.price)}));
   if(buys.some(p=>p.shares<1))return;
   const total=buys.reduce((s,p)=>s+p.price*p.shares,0);
   result.push({buys,total,remaining:budget-total});
@@ -45,6 +59,12 @@ function combinations(rows,budget){
   if(groupsArray.length>2)add([groupsArray[i][0],groupsArray[(i+1)%groupsArray.length][0],groupsArray[(i+2)%groupsArray.length][0]]);
  }
  return result.sort((a,b)=>Math.max(...b.buys.map(x=>x.fall))-Math.max(...a.buys.map(x=>x.fall))||Math.min(...a.buys.map(x=>x.days_since??Infinity))-Math.min(...b.buys.map(x=>x.days_since??Infinity))||a.buys.length-b.buys.length);
+}
+function opportunityGroups(rows,budget){
+ return Object.fromEntries(['portfolio','new'].map(scope=>{
+  const candidates=rows.filter(row=>scope==='portfolio'?row.in_portfolio:!row.in_portfolio);
+  return [scope,{candidates,combinations:combinations(candidates,budget)}];
+ }));
 }
 function validate(body){
  if(!body||typeof body.request_id!=='string'||!/^[a-zA-Z0-9-]{16,80}$/.test(body.request_id))fail(400,'Invalid confirmation identifier. Reopen the rebalance dialog.');
@@ -66,6 +86,7 @@ async function commit(tx,uid,input,context){
  if(!source)fail(409,'This holding is no longer eligible for rebalancing. Refresh the page.');
  const permitted=new Map(context.candidates.map(s=>[s.ticker,s]));
  if(body.buys.some(b=>!permitted.has(b.ticker)))fail(409,'An opportunity is no longer in an active SIP zone. Reopen the rebalance dialog.');
+ if(body.buys.some(b=>permitted.get(b.ticker).suggested_investment!==undefined&&b.price*b.shares>permitted.get(b.ticker).suggested_investment+0.005))fail(409,'A buy exceeds the current Opportunities Beta suggestion. Reopen the rebalance dialog.');
  const holding=(await run('SELECT * FROM portfolio WHERE user_id=? AND ticker=?',[uid,body.sell.ticker])).rows[0];
  if(!holding||body.sell.shares>Number(holding.shares))fail(409,'Sell quantity exceeds your current holding. Refresh and try again.');
  const ids=[];
@@ -90,4 +111,4 @@ async function commit(tx,uid,input,context){
  await run('INSERT INTO rebalance_batches(user_id,request_id,payload_hash,result_json) VALUES (?,?,?,?)',[uid,body.request_id,hash,JSON.stringify(result)]);
  return result;
 }
-module.exports={schema,indiaDate,daysSince,sourceRows,candidates,combinations,commit};
+module.exports={schema,indiaDate,daysSince,sourceRows,candidates,betaCandidates,combinations,opportunityGroups,commit};

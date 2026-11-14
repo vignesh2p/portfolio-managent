@@ -14,4 +14,4 @@ Watchlist search now shows local autocomplete suggestions first. A 350ms debounc
 
 Trades now support Yahoo lookup and an editable ticker, with a separate saved Yahoo Finance Code. Excel imports require Yahoo Finance Code on every row in both sections; the template includes examples. Preview rejects missing/invalid codes and commit validates them again. User-specific ticker aliases retain their price mapping.
 
-Opportunity recommendations use cumulative allocation through the active zone minus all paid BUY amounts for that stock, including catch-up buys. Bonus shares cost zero; sales do not replenish allocation. Suggested quantities round down at CMP and are zero outside the active zone. The same remaining-budget rule applies to SIP and rebalancing suggestions; rebalancing is additionally limited by sale proceeds.
+Opportunity recommendations use each zone's configured allocation independently, with whole-share quantities calculated at CMP. Prior purchases remain displayed but do not reduce suggested allocations. Rebalancing uses sale proceeds and the current zone's allocation weights.

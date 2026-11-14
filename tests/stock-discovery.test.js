@@ -13,7 +13,7 @@ test('Indian equity filtering, cache, exact symbol fallback and input validation
 test('discovered stocks excluded from default; duplicate listing reuses existing ticker',async()=>{
  const {createClient}=require('@libsql/client');const file=require('node:path').join(require('node:os').tmpdir(),'discovery-'+require('node:crypto').randomUUID()+'.db');const db=createClient({url:require('node:url').pathToFileURL(file).href});
  try{
- await db.executeMultiple(`CREATE TABLE watchlist(user_id INTEGER,ticker TEXT,code TEXT,stock_code TEXT,yahoo_finance_code TEXT,name TEXT,cmp REAL,change REAL,ath REAL,ath_date TEXT,price_as_of TEXT,quote_fetched_at TEXT,quote_error TEXT,source TEXT,updated_at TEXT,in_default_watchlist INTEGER DEFAULT 1,UNIQUE(user_id,ticker));CREATE TABLE stock_yahoo_codes(ticker TEXT PRIMARY KEY,yahoo_finance_code TEXT);`);
+ await db.executeMultiple(`CREATE TABLE watchlist(user_id INTEGER,ticker TEXT,code TEXT,stock_code TEXT,yahoo_finance_code TEXT,name TEXT,cmp REAL,pe REAL,change REAL,ath REAL,ath_date TEXT,price_as_of TEXT,quote_fetched_at TEXT,quote_error TEXT,source TEXT,updated_at TEXT,in_default_watchlist INTEGER DEFAULT 1,UNIQUE(user_id,ticker));CREATE TABLE stock_yahoo_codes(ticker TEXT PRIMARY KEY,yahoo_finance_code TEXT);`);
  const service=createStockDiscovery({systemId:async()=>99});const item={stock:{ticker:'ABC.NS',code:'',stock_code:'NSE:ABC',yahoo_finance_code:'ABC.NS'},quote:{price:10,name:'ABC'}};
  assert.deepEqual(await service.insert(db,[item]),['ABC.NS']);assert.deepEqual(await service.insert(db,[item]),['ABC.NS']);
  const rows=(await db.execute('SELECT * FROM watchlist')).rows;assert.equal(rows.length,1);assert.equal(rows[0].in_default_watchlist,0);

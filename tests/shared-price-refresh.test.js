@@ -2,7 +2,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict');
 const {createSharedPriceRefresh}=require('../shared-price-refresh');
 const {TTL}=require('../yahoo-prices');
 test('different users and server instances share one refresh until the 30-minute window expires',async()=>{
- let time=1000000,runs=0;const row={lease_until:0,completed_at:0};
+ let time=Date.parse('2026-10-26T03:30:00Z'),runs=0;const row={lease_until:0,completed_at:0};
  let transactionQueue=Promise.resolve();
  const execute=async query=>{
   if(typeof query==='string')return {rows:[{...row}]};
@@ -18,4 +18,15 @@ test('different users and server instances share one refresh until the 30-minute
  time++;await Promise.all([instanceA(),instanceB()]);assert.equal(runs,2);
  // An abandoned server lease can be recovered after its expiry.
  row.lease_until=time-1;row.completed_at=0;row.owner='dead';await instanceB();assert.equal(runs,3);
+});
+
+test('browser refreshes skip database and provider work outside weekday IST market hours',async()=>{
+ let time;
+ const unexpected=()=>{throw Error('Closed market must not access refresh storage or Yahoo');};
+ const refresh=createSharedPriceRefresh({db:{prepare:unexpected},transactionRaw:unexpected,refresh:unexpected,now:()=>time});
+ for(const date of ['2026-10-26T03:29:59Z','2026-10-26T10:01:00Z','2026-10-26T18:00:00Z','2026-10-24T06:00:00Z','2026-10-25T06:00:00Z']){
+  time=Date.parse(date);
+  const result=await refresh();
+  assert.equal(result.skipped,true,date);assert.equal(result.marketClosed,true,date);
+ }
 });

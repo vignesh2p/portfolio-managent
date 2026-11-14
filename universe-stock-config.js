@@ -1,7 +1,10 @@
 const schema=`CREATE TABLE IF NOT EXISTS universe_stock_config (ticker TEXT PRIMARY KEY,code TEXT NOT NULL,stock_code TEXT NOT NULL,updated_at TEXT NOT NULL)`;
 const yahooCodeSchema='CREATE TABLE IF NOT EXISTS stock_yahoo_codes (ticker TEXT PRIMARY KEY,yahoo_finance_code TEXT NOT NULL)';
 async function applyYahooCodes(tx,systemId){
-  await tx.execute({sql:'INSERT OR IGNORE INTO stock_yahoo_codes(ticker,yahoo_finance_code) SELECT ticker,stock_code FROM watchlist WHERE user_id=?',args:[systemId]});
+  await tx.execute({sql:`INSERT OR IGNORE INTO stock_yahoo_codes(ticker,yahoo_finance_code)
+    SELECT ticker,CASE WHEN candidate LIKE 'NSE:%' THEN substr(candidate,5)||'.NS'
+      WHEN candidate LIKE 'BSE:%' OR candidate LIKE 'BOM:%' THEN substr(candidate,5)||'.BO'
+      ELSE candidate END FROM (SELECT ticker,upper(trim(COALESCE(NULLIF(yahoo_finance_code,''),stock_code))) AS candidate FROM watchlist WHERE user_id=?)`,args:[systemId]});
   await tx.execute({sql:'UPDATE watchlist SET yahoo_finance_code=(SELECT yahoo_finance_code FROM stock_yahoo_codes c WHERE c.ticker=watchlist.ticker) WHERE user_id=?',args:[systemId]});
 }
 async function applyUniverseConfig(tx,systemId){
@@ -18,7 +21,7 @@ async function saveUniverseConfig(tx,systemId,ticker,body){
   const stock=rows.find(s=>s.ticker===ticker);
   if(!stock)fail(404,'Stock not found in the universe');
   const yahooCode=body.yahoo_finance_code===undefined?stock.yahoo_finance_code:String(body.yahoo_finance_code).trim().toUpperCase();
-  if(!/^(?:(?:NSE|BSE|BOM):[A-Z0-9][A-Z0-9&._-]{0,49}|[A-Z0-9][A-Z0-9&._-]{0,49}\.(?:NS|BO))$/.test(yahooCode))fail(400,'Enter a valid Yahoo Finance Code, such as RELIANCE.NS or NSE:RELIANCE.');
+  if(!/^[A-Z0-9][A-Z0-9&._-]{0,49}\.(NS|BO)$/.test(yahooCode))fail(400,'Enter a valid Yahoo Finance Code ending .NS or .BO, such as RELIANCE.NS.');
   if(body.yahoo_finance_code!==undefined&&body.expected_yahoo_finance_code!==stock.yahoo_finance_code)fail(409,'This stock was updated. Refresh and try again.');
   if(body.expected_code!==stock.code||body.expected_stock_code!==stock.stock_code)fail(409,'This stock was updated. Refresh and try again.');
   if(rows.some(s=>s.ticker!==ticker&&[s.ticker,s.stock_code,s.code].some(v=>v&&(String(v).toUpperCase()===stockCode||(code&&String(v).toUpperCase()===code.toUpperCase())))))fail(409,'That CODE or Stock Code belongs to another stock.');

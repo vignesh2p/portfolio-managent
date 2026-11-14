@@ -185,6 +185,12 @@ dialog::backdrop{background:rgba(0,0,0,.72)}
 .rebalance-option h3{font-size:16px;margin-top:0;color:#90caf9}
 #rebalance-dialog p{font-size:14px;line-height:1.6;overflow-wrap:anywhere}
 .rebalance-note{color:#b5c7d3}
+.rebalance-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0 14px;border-bottom:1px solid #405564;padding-bottom:12px}
+.rebalance-tabs [role="tab"]{flex:1 1 220px;padding:12px 16px;border:1px solid #527083;border-radius:8px;background:#172d3b;color:#dceaf3;font:inherit;cursor:pointer}
+.rebalance-tabs [aria-selected="true"]{background:#184d46;border-color:#57d8b3;color:#92f3d5;font-weight:700;box-shadow:inset 0 -3px #57d8b3}
+#rebalance-dialog [role="tabpanel"][hidden]{display:none}
+#rebalance-dialog:modal{overscroll-behavior:contain}
+#rebalance-dialog::backdrop{overflow:hidden;overscroll-behavior:contain}
 .rebalance-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .rebalance-field{display:flex;flex-direction:column;gap:8px;font-size:13px;margin:10px 0;min-width:0}
 .rebalance-field input{width:100%;min-width:0;box-sizing:border-box}
@@ -227,3 +233,16 @@ dialog::backdrop{background:rgba(0,0,0,.72)}
 .stock-suggestion{padding:12px;min-height:48px;box-sizing:border-box;cursor:pointer;overflow-wrap:anywhere;border:1px solid #777;border-radius:6px}.stock-suggestion:hover,.stock-suggestion[aria-selected="true"]{background:#24415b;color:#fff}
 
 #admin-stock-suggestions{display:flex;flex-direction:column;gap:8px;max-height:320px;overflow:auto}#admin-stock-search{font-size:16px}
+#t-stock-options{display:flex;flex-direction:column;gap:8px;max-height:320px;overflow:auto}#t-stock-name{font-size:16px}
+/* Beta keeps stock identity visible while its allocation previews scroll. */
+.beta-table{border-collapse:separate;border-spacing:0}
+#beta-watchlist-controls[hidden]{display:none}
+.beta-table caption{text-align:left;padding:12px;color:#aebbc8}
+.beta-table tbody th{position:sticky;left:0;z-index:2;background:#101d28;min-width:160px;max-width:220px;white-space:normal;text-transform:none;letter-spacing:normal;font-size:12px;font-weight:400}
+.beta-table td{min-width:210px;vertical-align:top;white-space:normal}
+.beta-breakdown{display:grid;grid-template-columns:minmax(140px,1fr) auto;gap:8px 12px;margin:14px 0}
+.beta-breakdown dt,.beta-breakdown dd{margin:0}
+.beta-breakdown dd{text-align:right;font-variant-numeric:tabular-nums}
+.beta-result{border-top:1px solid #486070;padding-top:8px;font-weight:700;color:#7ee8cb}
+.beta-target{color:#83caff;font-weight:700}.beta-carry{color:#f6c46b;font-size:12px;white-space:nowrap}.beta-current{background:#122b30;min-width:260px!important}.beta-current .beta-result{line-height:1.8}.beta-table .beta-breakdown{grid-template-columns:minmax(125px,1fr) minmax(100px,auto)}
+.beta-cycle-history{margin-top:14px;max-width:350px;overflow-wrap:anywhere}.beta-cycle-history summary{cursor:pointer;color:#83caff}.beta-cycle-history section{border-top:1px solid #486070;margin-top:12px;padding-top:12px}.beta-cycle-history ul{padding-left:18px}

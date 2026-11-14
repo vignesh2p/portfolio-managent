@@ -1,6 +1,48 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {yahooSymbol,tradingDate,getYahooData,createYahooPrices,TTL}=require('../yahoo-prices');
 const stock={ticker:'RELIANCE',stock_code:'NSE:WRONG',yahoo_finance_code:'NSE:RELIANCE',name:'Reliance Industries Ltd'};
+test('Yahoo trailing PE is captured without substituting forward PE or inventing missing values',async()=>{
+ for(const value of [23.45,0,-5,undefined,null,NaN,Infinity]){
+  const yf=provider(),quote=yf.quote;
+  yf.quote=async symbol=>({...await quote(symbol),trailingPE:value,forwardPE:99});
+  const row=await getYahooData(yf,stock);
+  assert.equal(row.pe,Number.isFinite(value)?value:null);
+ }
+});
+
+test('saved Yahoo PE overrides legacy watchlist PE and missing cache values stay empty',async()=>{
+ const quotes=[{yahoo_symbol:'RELIANCE.NS',fetched_at:1000,data_json:JSON.stringify({price:100,pe:23.45})}];
+ const db={prepare:sql=>({all:async()=>sql.includes('yahoo_symbol_aliases')?[]:quotes})};
+ const service=createYahooPrices({db,yf:{},now:()=>1000});
+ let rows=await service.readStocks([{...stock,pe:999}]);
+ assert.equal(rows[0].pe,23.45);
+ quotes[0].data_json=JSON.stringify({price:100});
+ rows=await service.readStocks([{...stock,pe:999}]);assert.equal(rows[0].pe,null);
+ quotes.length=0;
+ rows=await service.readStocks([{...stock,pe:999}]);assert.equal(rows[0].pe,null);
+});
+test('ATH history is reused for a day, observes new highs, and retains last good ATH on failure',async()=>{
+ const {ATH_TTL}=require('../yahoo-prices');
+ const yf=provider();let histories=0;const chart=yf.chart;
+ yf.chart=async(...args)=>{histories++;return chart(...args);};
+ const time=Date.parse('2026-10-26T00:00:00Z');
+ const first=await getYahooData(yf,stock,null,null,time);
+ assert.equal(histories,2);
+ const second=await getYahooData(yf,stock,null,first,time+TTL);
+ assert.equal(histories,2);assert.equal(second.ath_fetched_at,first.ath_fetched_at);
+ const originalQuote=yf.quote;yf.quote=async symbol=>({...await originalQuote(symbol),regularMarketDayHigh:160});
+ const high=await getYahooData(yf,stock,null,second,time+2*TTL);
+ assert.equal(histories,2);assert.equal(high.ath,160);
+ assert.equal(high.ath_fetched_at,first.ath_fetched_at);
+ yf.quote=originalQuote;
+ await getYahooData(yf,stock,null,second,time+ATH_TTL);
+ assert.equal(histories,4);
+ yf.chart=async()=>{throw Error('History offline');};
+ const fallback=await getYahooData(yf,stock,null,second,time+ATH_TTL);
+ assert.equal(fallback.price,100);assert.equal(fallback.ath,150);
+ assert.equal(fallback.ath_fetched_at,first.ath_fetched_at);
+ assert.match(fallback.quote_error,/Last known ATH/);
+});
 function provider(){return {quote:async symbol=>({symbol,regularMarketPrice:100,regularMarketTime:new Date('2026-10-23T10:00:00Z'),regularMarketChange:2,fiftyTwoWeekHigh:120}),chart:async(symbol,{interval})=>({quotes:interval==='1mo'?[{date:new Date('2024-01-01'),high:150}]:[{date:new Date('2024-01-05T18:30:00Z'),high:150},{date:new Date('2024-01-07'),high:140}]}),search:async()=>({quotes:[]})};}
 test('maps NSE/BOM/BSE and preserves already-qualified Yahoo symbols without guessing exchanges',()=>{
  assert.equal(yahooSymbol('NSE:RELIANCE'),'RELIANCE.NS');assert.equal(yahooSymbol('BOM:GRWRHITECH'),'GRWRHITECH.BO');assert.equal(yahooSymbol('BSE:500655'),'500655.BO');assert.equal(yahooSymbol('reliance.ns'),'RELIANCE.NS');assert.throws(()=>yahooSymbol('500655'),/exchange/);
@@ -51,7 +93,7 @@ test('migrates existing quotes to shared Yahoo keys and restores snapshot prices
    await client.execute({sql:'INSERT INTO yahoo_quote_cache VALUES (?,?,?)',args:['BOM:500655',JSON.stringify(data),Date.now()]});
    for(const sql of sharedSchema)await client.execute(sql);
    assert.equal((await client.execute('SELECT yahoo_symbol FROM yahoo_shared_quotes')).rows[0].yahoo_symbol,'GRWRHITECH.BO');
-   await client.executeMultiple("CREATE TABLE watchlist(user_id INTEGER,yahoo_finance_code TEXT,cmp REAL,change REAL,ath REAL,ath_date TEXT,price_as_of TEXT,quote_fetched_at TEXT,quote_error TEXT);INSERT INTO watchlist(user_id,yahoo_finance_code) VALUES (99,'BOM:500655');");
+   await client.executeMultiple("CREATE TABLE watchlist(user_id INTEGER,yahoo_finance_code TEXT,cmp REAL,pe REAL,change REAL,ath REAL,ath_date TEXT,price_as_of TEXT,quote_fetched_at TEXT,quote_error TEXT);INSERT INTO watchlist(user_id,yahoo_finance_code) VALUES (99,'BOM:500655');");
    const tx=await client.transaction('write');try{await applyCachedUniverseQuotes(tx,99);await tx.commit();}finally{tx.close();}
    assert.equal((await client.execute('SELECT cmp FROM watchlist')).rows[0].cmp,100);
  }finally{client.close();try{fs.rmSync(file,{force:true});}catch(e){if(e.code!=='EPERM')throw e;}}

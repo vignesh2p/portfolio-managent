@@ -41,6 +41,14 @@ test('export includes every in-range trade, bonus trades and both boundaries, so
     for(const query of [{},{start:'2026-02-30',end:'2026-03-31'},{start:'2026-04-01',end:'2026-03-01'},{start:['2026-03-01'],end:'2026-03-31'}]){
       assert.equal((await call(query)).status,400);
     }
+    await client.execute('ALTER TABLE trade_history ADD COLUMN stock_name TEXT');
+    await client.execute("UPDATE trade_history SET stock_name='Saved Company' WHERE id=352");
+    const listRoute=source.slice(source.indexOf('app.get("/api/trades",'),source.indexOf('async function resolveTradeYahoo('));
+    vm.runInNewContext(listRoute,{app:{get:(_path,_auth,fn)=>handler=fn},auth:()=>{},getOnepieceSystemUserId:async()=>99,matchStock:require('../stock-code-settings').matchStock,db:{prepare:sql=>({all:async(...args)=>(await client.execute({sql,args})).rows})}});
+    const listed=await call({limit:400});
+    assert.equal(listed.data.find(t=>t.id===352).stock_name,'Saved Company');
+    assert.equal(listed.data.find(t=>t.id===351).stock_name,'Bonus Company');
+    assert.ok(listed.data.every(t=>t.user_id===1));
   } finally { client.close(); }
 });
 
@@ -55,8 +63,8 @@ test('frontend compiles and CSV preserves zero values, all rows and escaped note
   context.downloadTradesCsv(Array.from({length:352},()=>({ticker:'BONUS',stock_code:'NSE:BONUS',stock_name:'Bonus Company',type:'BUY',shares:10,traded_at:'2022-02-14T23:59:59Z',price:0,amount:0,notes:'Bonus, "shares"'})),'2026-03-01','2026-03-31');
   const csv=await blob.text();
   assert.equal(csv.split('\r\n').length,353);
-  assert.equal(csv.split('\r\n')[0],'"Date","Scrip","Scrip Name","Action","Quantity","Buy / Sell @","Value","Brkg","Commentry"');
-  assert.equal(csv.split('\r\n')[1],'"14-Feb-2022","NSE:BONUS","Bonus Company","BUY","10","0","0","","Bonus, ""shares"""');
+  assert.equal(csv.split('\r\n')[0],'"Date","Scrip","Action","Quantity","Buy / Sell @","Value","Brkg","Commentry","Scrip Name"');
+  assert.equal(csv.split('\r\n')[1],'"14-Feb-2022","NSE:BONUS","BUY","10","0","0","","Bonus, ""shares""","Bonus Company"');
   assert.ok(csv.includes('"0","0"'));
   assert.ok(csv.includes('"Bonus, ""shares"""'));
   assert.equal(link.download,'onepiece-trades-2026-03-01-to-2026-03-31.csv');

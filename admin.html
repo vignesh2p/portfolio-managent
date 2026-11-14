@@ -332,10 +332,15 @@
     .page-title{font-size:24px}
     .debug-grid{grid-template-columns:1fr}
   }
-.universe-input{font-size:16px;min-height:48px;min-width:160px;max-width:100%;padding:10px;background:#141c2f;color:#fff;border:1px solid #65718a;border-radius:8px}#universe-search{display:block;width:100%;margin:10px 0}#universe-message{margin:12px 0}#universe-rows tr[hidden]{display:none}</style>
+.universe-input{font-size:16px;min-height:48px;min-width:160px;max-width:100%;padding:10px;background:#141c2f;color:#fff;border:1px solid #65718a;border-radius:8px}#universe-search{display:block;width:100%;margin:10px 0}#universe-message{margin:12px 0}#universe-rows tr[hidden]{display:none}#universe-rows tr.yahoo-code-invalid>td{background:#4a1823;color:#ffd5dc}#universe-rows tr.yahoo-code-invalid input[name="yahoo_finance_code"]{border:2px solid #ff647c}.yahoo-validation-note{max-width:300px;margin-top:6px;font-size:12px}#universe-validate-yahoo{margin:8px}</style>
 <link rel="stylesheet" href="/responsive.css">
 <script src="/responsive.js" defer></script>
 <script src="/admin-activity.js" defer></script>
+<script src="/admin-price-refresh.js" defer></script>
+<script src="/tax-admin-ui.js" defer></script>
+<script src="/corporate-actions-admin.js" defer></script>
+<link rel="stylesheet" href="/corporate-actions.css">
+<link rel="stylesheet" href="/tax-harvesting.css">
 </head>
 <body class="admin-console">
   <div id="login-view" class="login-wrap">
@@ -394,6 +399,7 @@
           <div class="page-meta" id="table-meta">Choose a table from the left to inspect rows.</div>
         </div>
         <div class="top-actions">
+          <button class="btn btn-primary" id="refresh-prices-btn" type="button" aria-describedby="price-refresh-help">Refresh all prices now</button>
           <button class="btn btn-secondary" id="refresh-btn" type="button">Refresh</button>
           <button class="btn btn-secondary" id="logout-btn" type="button">Sign Out</button>
         </div>
@@ -401,6 +407,11 @@
 
       <div id="admin-banner" class="banner"></div>
       <div id="admin-error" class="error"></div>
+      <div class="panel" style="margin-bottom:14px">
+        <p id="price-refresh-help" class="subtle">Pull the latest Yahoo prices for the entire OnePiece stock universe, even outside trading hours. Replaces saved prices for all users. Keep this page open until finished.</p>
+        <p id="price-refresh-status" role="status"></p>
+        <details id="price-refresh-errors" hidden><summary>Stocks that could not be refreshed</summary><ul id="price-refresh-error-list"></ul></details>
+      </div>
       <div id="db-debug" class="panel" style="margin-bottom:14px"></div>
 
       <div id="content" class="panel">
@@ -605,7 +616,7 @@ async function doLogin(event) {
 }
 
 function renderNav() {
-  tableNav.innerHTML = ['User management','User activity','Stocks Config','Leader board',...TABLES.filter(t=>t!=='users')].map(function (table) {
+  tableNav.innerHTML = ['User management','User activity','Stocks Config','Corporate actions','Tax settings','Leader board',...TABLES.filter(t=>t!=='users')].map(function (table) {
     var active = table === currentTable ? 'active' : '';
     var count = tableCounts[table];
     var label = count === void 0 ? 'Open table' : count + ' rows';
@@ -820,7 +831,53 @@ async function loadUniverseStockConfig(){
     body.querySelectorAll('tr').forEach(row=>{const stock=universeStocks[Number(row.dataset.index)];row.hidden=![stock.name,stock.ticker,stock.code,stock.stock_code,stock.yahoo_finance_code].join(' ').toLowerCase().includes(q);});
   });
   document.getElementById('universe-export').addEventListener('click',exportUniverseStocks);
+  const validateButton=document.createElement('button');validateButton.id='universe-validate-yahoo';validateButton.type='button';validateButton.className='btn btn-secondary';validateButton.textContent='Yahoo Finance Code Validation';
+  document.getElementById('universe-export').after(validateButton);
+  validateButton.addEventListener('click',()=>validateUniverseYahooCodes(validateButton));
+  body.querySelectorAll('input[name="yahoo_finance_code"]').forEach(input=>input.addEventListener('input',()=>{
+    const row=input.closest('tr');row.dataset.validationRevision=String(Number(row.dataset.validationRevision||0)+1);setUniverseYahooValidation(row,'','Code changed. Validate again.');
+  }));
   setBanner(universeStocks.length+' universe stocks loaded.',true);
+}
+function setUniverseYahooValidation(row,status,message){
+  row.dataset.yahooValidation=status;
+  row.classList.toggle('yahoo-code-invalid',status==='invalid');
+  const input=row.querySelector('input[name="yahoo_finance_code"]');
+  input.setAttribute('aria-invalid',String(status==='invalid'));
+  let note=row.querySelector('.yahoo-validation-note');
+  if(!note){note=document.createElement('div');note.className='yahoo-validation-note';note.id='yahoo-validation-'+row.dataset.index;input.after(note);input.setAttribute('aria-describedby',note.id);}
+  note.textContent=message;
+}
+async function validateUniverseYahooCodes(button){
+  const body=document.getElementById('universe-rows'),message=document.getElementById('universe-message');
+  const rows=[...body.querySelectorAll('tr')].filter(row=>!row.hidden);
+  if(!rows.length){message.textContent='No displayed stocks to validate.';return;}
+  const entries=rows.map(row=>({row,code:row.querySelector('input[name="yahoo_finance_code"]').value,revision:row.dataset.validationRevision||'0'}));
+  button.disabled=true;let checked=0;
+  try{
+    for(let start=0;start<entries.length;start+=5){
+      if(!body.isConnected)return;
+      message.textContent='Validating Yahoo Finance codes: '+checked+' / '+entries.length+'…';
+      const batch=entries.slice(start,start+5);
+      let results;
+      try{
+        const response=await fetchJson('/api/admin/stock-config/validate-yahoo',{method:'POST',body:JSON.stringify({codes:batch.map(entry=>entry.code)})});
+        if(!response.success||!Array.isArray(response.data)||response.data.length!==batch.length)throw new Error(response.error||'Validation unavailable');
+        results=response.data;
+      }catch{results=batch.map(entry=>({code:entry.code,status:'unavailable',message:'Could not validate. Retry validation.'}));}
+      if(!body.isConnected)return;
+      batch.forEach((entry,index)=>{
+        if(entry.row.isConnected&&(entry.row.dataset.validationRevision||'0')===entry.revision&&entry.row.querySelector('input[name="yahoo_finance_code"]').value===entry.code){
+          const result=results[index];setUniverseYahooValidation(entry.row,result.status,result.message);
+        }
+      });
+      checked+=batch.length;
+      [...body.children].sort((a,b)=>Number(b.dataset.yahooValidation==='invalid')-Number(a.dataset.yahooValidation==='invalid')||Number(a.dataset.index)-Number(b.dataset.index)).forEach(row=>body.append(row));
+    }
+    const count=status=>rows.filter(row=>row.dataset.yahooValidation===status).length;
+    const valid=count('valid'),invalid=count('invalid'),unavailable=count('unavailable');
+    message.textContent='Validation complete: '+valid+' valid, '+invalid+' invalid, '+unavailable+' could not be checked, '+(rows.length-valid-invalid-unavailable)+' changed during validation. Invalid rows are highlighted red at the top. Correct the codes and Save.';
+  }finally{button.disabled=false;}
 }
 async function saveUniverseStock(index,button){
   const stock=universeStocks[index],message=document.getElementById('universe-message');
@@ -850,6 +907,8 @@ async function loadTable(table) {
   content.innerHTML = '<div class="panel"><div class="shell-head"><div><div style="' + SYNE_STYLE_MD + '">Loading ' + escapeHtml(table) + '</div><div class="subtle">Fetching schema and rows from the backend...</div></div><span class="chip">Loading</span></div><div class="empty-state">Please wait while the table loads.</div></div>';
   try {
     if(table==='User activity'){await loadAdminActivity();return;}
+    if(table==='Corporate actions'){await loadCorporateActionsAdmin();return;}
+    if(table==='Tax settings'){await loadTaxAdmin();return;}
     if(table==='User management'){await loadUserManagement();return;}
     if(table==='Stocks Config'){await loadUniverseStockConfig();return;}
     if(table==='Leader board'){

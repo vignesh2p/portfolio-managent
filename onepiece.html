@@ -29,6 +29,10 @@ input,button,select{font-family:'DM Mono',monospace}
 .auth-submit{width:100%;padding:14px;background:linear-gradient(135deg,#00ffb4,#00bfff);border:none;border-radius:9px;color:#000;font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase;cursor:pointer;margin-top:4px;transition:opacity .2s}
 .auth-submit:hover{opacity:.85}
 .auth-submit:disabled{opacity:.5;cursor:default}
+.auth-link{background:none;border:0;color:#00ffb4;cursor:pointer;min-height:48px;text-decoration:underline}
+#auth-reset .auth-input{font-size:16px}
+#auth-reset label{color:#aab4c3}
+#auth-reset :focus-visible,.auth-link:focus-visible{outline:2px solid #00ffb4;outline-offset:3px}
 .auth-msg{padding:11px 14px;border-radius:8px;font-size:12px;text-align:center;display:none}
 .auth-msg.err{background:rgba(255,100,100,.08);border:1px solid rgba(255,100,100,.2);color:#ff8585}
 .auth-msg.ok{background:rgba(0,255,180,.08);border:1px solid rgba(0,255,180,.2);color:#00ffb4}
@@ -285,8 +289,9 @@ input,button,select{font-family:'DM Mono',monospace}
 
 /* -- SETTINGS -- */
 .settings-card{padding:28px 30px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:16px;margin-bottom:20px}
-.settings-tabs{display:flex;gap:10px;margin-bottom:24px}
+.settings-tabs{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:24px}
 .settings-tabs button{padding:12px 18px;border:1px solid rgba(255,255,255,.15);border-radius:10px;background:transparent;color:inherit;cursor:pointer}
+#tab-settings .settings-tabs{flex-wrap:wrap;overflow:visible}#tab-settings .settings-tabs button{flex:1 1 220px;white-space:normal;min-height:48px}
 .settings-tabs button[aria-selected="true"]{color:#00ffb4;border-color:#00ffb4;background:rgba(0,255,180,.08)}
 .settings-stock-table{width:100%;border-collapse:collapse;min-width:640px;text-align:left}
 .settings-stock-table th,.settings-stock-table td{padding:12px;border-bottom:1px solid rgba(255,255,255,.08)}
@@ -344,7 +349,15 @@ input,button,select{font-family:'DM Mono',monospace}
 .watchlist-controls{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:16px 0}.watchlist-controls select{width:auto;max-width:100%}#watchlist-editor{padding:16px;border:1px solid #555;margin:16px 0}#watchlist-editor>label{display:block;margin-top:12px}#watchlist-choices{max-height:320px;overflow:auto}#watchlist-choices label{display:flex;gap:10px;align-items:center;min-height:48px}#watchlist-choices label[hidden]{display:none}#watchlist-message{margin:12px 0}#opportunity-watchlist-controls{margin:16px 0}#opportunity-watchlist-controls select{max-width:360px}</style>
 <link rel="stylesheet" href="/responsive.css">
 <script src="/responsive.js" defer></script>
+<script src="/portfolio-history-ui.js" defer></script>
+<link rel="stylesheet" href="/portfolio-history.css">
 <script src="/rebalancing-ui.js" defer></script>
+<link rel="stylesheet" href="/quarterly-results.css">
+<script src="/quarterly-results-ui.js" defer></script>
+<link rel="stylesheet" href="/corporate-actions.css">
+<script src="/corporate-actions-ui.js" defer></script>
+<script src="/tax-harvesting-ui.js" defer></script>
+<link rel="stylesheet" href="/tax-harvesting.css">
 <script src="/user-activity-client.js" defer></script>
 <script src="/sip-config-validation.js"></script>
 <script src="/xirr-eligibility.js"></script>
@@ -365,7 +378,22 @@ input,button,select{font-family:'DM Mono',monospace}
       <div class="auth-field"><label>Password</label><input id="login-password" class="auth-input" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"/></div>
       <div id="login-msg" class="auth-msg err"></div>
       <button class="auth-submit" id="login-btn" onclick="doLogin()">Sign In ?</button>
+      <button class="auth-link" type="button" onclick="openPasswordReset()">Forgot password?</button>
     </div></div>
+    <div id="auth-reset" style="display:none">
+      <h2 style="font-size:20px;margin-bottom:12px">Reset password</h2>
+      <p id="reset-help" style="color:#aab4c3;font-size:13px;line-height:1.6;margin-bottom:20px">Step 1 of 3: Enter your account email.</p>
+      <form id="reset-form" class="auth-form" method="post" action="/api/auth/password-reset/request">
+        <div class="auth-field" id="reset-email-field"><label for="reset-email">Email</label><input id="reset-email" name="email" class="auth-input" type="email" autocomplete="username" autocapitalize="off" spellcheck="false" maxlength="254" required/></div>
+        <div class="auth-field" id="reset-code-field" hidden><label for="reset-code">Verification code</label><input id="reset-code" name="code" class="auth-input" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" aria-describedby="reset-help" disabled/></div>
+        <div class="auth-field" id="reset-password-field" hidden><label for="reset-password">New password (at least 8 characters)</label><input id="reset-password" name="password" class="auth-input" type="password" autocomplete="new-password" minlength="8" maxlength="72" disabled/></div>
+        <div class="auth-field" id="reset-confirm-field" hidden><label for="reset-confirm">Confirm new password</label><input id="reset-confirm" name="confirm" class="auth-input" type="password" autocomplete="new-password" minlength="8" maxlength="72" disabled/></div>
+        <div id="reset-msg" class="auth-msg" role="status" aria-live="polite"></div>
+        <button class="auth-submit" id="reset-btn" type="submit">Send verification code</button>
+        <button class="auth-link" id="reset-resend" type="button" hidden>Resend code</button>
+        <button class="auth-link" type="button" onclick="showAuthTab('login',document.querySelector('.auth-tab'))">Back to sign in</button>
+      </form>
+    </div>
     <div id="auth-signup" style="display:none"><div class="auth-form">
       <div class="auth-field"><label>Name (optional)</label><input id="signup-name" class="auth-input" placeholder="Your name"/></div>
       <div class="auth-field"><label>Email</label><input id="signup-email" class="auth-input" type="email" placeholder="you@example.com"/></div>
@@ -436,8 +464,12 @@ input,button,select{font-family:'DM Mono',monospace}
         <div class="sidebar-nav">
           <button class="tab side-tab active" onclick="switchTab('portfolio',this)">Portfolio</button>
           <button class="tab side-tab" onclick="switchTab('opportunities',this)">Opportunities</button>
+          <button class="tab side-tab" onclick="switchTab('opportunities-beta',this)">Opportunities Beta</button>
+          <button class="tab side-tab" onclick="switchTab('results-analysis',this)">Results Analysis</button>
           <button class="tab side-tab" onclick="switchTab('watchlist',this)">Watchlist</button>
           <button class="tab side-tab" onclick="switchTab('trades',this)">Trades</button>
+          <button class="tab side-tab" onclick="switchTab('corporate-actions',this)">Corporate Actions <span id="corporate-actions-count" class="ca-badge" hidden></span></button>
+          <button class="tab side-tab" onclick="switchTab('tax-harvesting',this)">Taxloss Harvesting</button>
           <button class="tab side-tab" onclick="switchTab('settings',this)">Settings</button>
         </div>
       </div>
@@ -449,15 +481,33 @@ input,button,select{font-family:'DM Mono',monospace}
 
     <main class="container" id="main-content" tabindex="-1">
     <div id="price-cache-status" class="page-sub" role="status" aria-live="polite"></div>
+    <section id="tab-corporate-actions" class="page ca-screen" aria-label="Corporate Actions"><div id="corporate-actions-root"></div></section>
+    <section id="tab-tax-harvesting" class="page tax-screen" aria-label="Taxloss Harvesting"><div id="tax-harvesting-root"></div></section>
+    <section id="tab-results-analysis" class="page results-screen" aria-label="Stock Results Analysis"><div id="quarterly-results-root"></div></section>
 
     <div id="tab-opportunities" class="page">
       <div class="page-title">Portfolio Opportunities</div>
-      <div class="page-sub">The active zone includes unused allocation from earlier zones, less prior purchases. Suggested quantities use the current price and round down to whole shares. Portfolio stocks are excluded from Watchlist opportunities.</div>
+      <div class="page-sub">Zones are checked automatically from your buy trades. Allocations follow your SIP configuration. Portfolio stocks are excluded from Watchlist opportunities.</div>
       <div class="portfolio-tabs" role="tablist" aria-label="Opportunity source">
         <button type="button" id="opportunity-tab-portfolio" class="portfolio-tab active" onclick="loadOpportunityScope('portfolio')">Portfolio</button>
         <button type="button" id="opportunity-tab-watchlist" class="portfolio-tab" onclick="loadOpportunityScope('watchlist')">Watchlist</button>
       </div>
       <div id="opportunity-watchlist-controls" hidden><label for="opportunity-watchlist-select">Watchlist</label><select id="opportunity-watchlist-select" class="form-input" onchange="loadOpportunityScope('watchlist')"></select></div><div id="opportunity-table"></div>
+    </div>
+
+    <div id="tab-opportunities-beta" class="page">
+      <div class="page-title">Opportunities Beta</div>
+      <p class="page-sub">Unused allocations carry forward. Extra spending reduces later suggestions. Only the highlighted current zone is actionable; other columns are previews, not amounts to add together.</p>
+      <details class="page-sub"><summary>How Beta uses your existing trades</summary>
+        <p>Cumulative targets include all allocations through the current dip level. Already invested is the remaining purchase cost: buys add cost, sales release average cost, and bonus shares add no cost. Unused earlier allocations are included once in the suggested investment. Quantities use the latest available CMP. A higher recorded ATH starts a new cycle using the remaining budget. Equal ATH values do not reset the cycle. When Yahoo’s historical ATH date and dated trades are available, the cycle starts on that ATH trading date. Earlier trades form its base investment; trades on the ATH date count in the new cycle. Otherwise, the observed-date start is shown. Only the current level is actionable; other levels are previews.</p>
+      </details>
+      <div class="portfolio-tabs" role="group" aria-label="Beta opportunity source">
+        <button type="button" id="beta-tab-portfolio" class="portfolio-tab active" aria-pressed="true" onclick="loadOpportunityBeta('portfolio')">Portfolio</button>
+        <button type="button" id="beta-tab-watchlist" class="portfolio-tab" aria-pressed="false" onclick="loadOpportunityBeta('watchlist')">Watchlist</button>
+        <button type="button" class="preview-btn" onclick="loadOpportunityBeta()">Refresh</button>
+      </div>
+      <div id="beta-watchlist-controls" class="watchlist-controls" hidden><label for="beta-watchlist-select">Watchlist</label><select id="beta-watchlist-select" class="form-input" onchange="loadOpportunityBeta('watchlist')"></select></div>
+      <div id="beta-table" aria-live="polite"></div>
     </div>
 
     <!-- PORTFOLIO TAB -->
@@ -466,6 +516,7 @@ input,button,select{font-family:'DM Mono',monospace}
         <button type="button" id="portfolio-tab-holdings" class="portfolio-tab active" role="tab" aria-selected="true" aria-controls="portfolio-holdings" onclick="switchPortfolioView('holdings')" onkeydown="onPortfolioTabKey(event,'holdings')">My Portfolio</button>
         <button type="button" id="portfolio-tab-allocation" class="portfolio-tab" role="tab" aria-selected="false" aria-controls="portfolio-allocation" tabindex="-1" onclick="switchPortfolioView('allocation')" onkeydown="onPortfolioTabKey(event,'allocation')">Allocation</button>
         <button type="button" id="portfolio-tab-rebalancing" class="portfolio-tab" role="tab" aria-selected="false" aria-controls="portfolio-rebalancing" tabindex="-1" onclick="switchPortfolioView('rebalancing')" onkeydown="onPortfolioTabKey(event,'rebalancing')">Rebalance Losers</button>
+        <button type="button" id="portfolio-tab-history" class="portfolio-tab" role="tab" aria-selected="false" aria-controls="portfolio-history" tabindex="-1" onclick="switchPortfolioView('history')" onkeydown="onPortfolioTabKey(event,'history')">History</button>
       </div>
       <div id="portfolio-holdings" role="tabpanel" aria-labelledby="portfolio-tab-holdings">
       <div class="page-title">My Portfolio</div>
@@ -498,9 +549,15 @@ input,button,select{font-family:'DM Mono',monospace}
         </div>
         <div id="allocation-content" aria-live="polite"></div>
       </div>
+      <div id="portfolio-history" role="tabpanel" aria-labelledby="portfolio-tab-history" hidden>
+        <h2 class="page-title">Portfolio history</h2>
+        <p class="page-sub">Daily snapshots scheduled around 4:00 pm India time. Values use the latest saved market prices; history starts from the first snapshot.</p>
+        <div class="history-toolbar"><label for="portfolio-history-range">Period</label><select id="portfolio-history-range" class="form-input" onchange="renderPortfolioHistory()"><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last year</option><option value="0" selected>All history</option></select><button type="button" class="preview-btn" onclick="loadPortfolioHistory()">Refresh history</button></div>
+        <div id="portfolio-history-content"></div>
+      </div>
       <div id="portfolio-rebalancing" role="tabpanel" aria-labelledby="portfolio-tab-rebalancing" hidden>
         <div class="page-title">Rebalance Losers</div>
-        <p class="page-sub">Holdings whose ATH was more than 365 days ago. Explore replacement stocks using the holding’s current market value, grouped by SIP level and ordered by fewest days since ATH.</p>
+        <p id="rebalance-description" class="page-sub">Holdings whose ATH was more than 365 days ago and whose XIRR is below your target growth (default 30%). Explore replacement stocks using the holding’s current market value, grouped by SIP level and ordered by fewest days since ATH.</p>
         <p id="rebalance-message" role="status"></p>
         <div id="rebalance-table"></div>
       </div>
@@ -509,7 +566,7 @@ input,button,select{font-family:'DM Mono',monospace}
     <!-- WATCHLIST TAB -->
     <div id="tab-watchlist" class="page">
       <div class="page-title">Watchlist</div>
-      <div class="page-sub">Prices, ATH and ATH dates use a shared 30-minute Yahoo Finance cache. Login refreshes the stock universe; page navigation reads saved prices.</div>
+      <div class="page-sub">Prices use a shared 30-minute Yahoo Finance cache. Historical ATH is checked daily. Saved prices load immediately while updates run in the background.</div>
       <div class="sheet-toolbar">
         <div id="watchlist-meta" class="sheet-meta">Ready to load.</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -517,7 +574,7 @@ input,button,select{font-family:'DM Mono',monospace}
         </div>
       </div>
       <div class="watchlist-controls"><label for="watchlist-select">Watchlist</label><select id="watchlist-select" class="form-input" onchange="showSelectedWatchlist()"></select><button type="button" class="preview-btn" onclick="openWatchlistEditor(false)">Create watchlist</button><button type="button" class="preview-btn" id="edit-watchlist-button" onclick="openWatchlistEditor(true)">Edit watchlist</button><button type="button" class="preview-btn" id="delete-watchlist-button" onclick="deleteWatchlist()">Delete watchlist</button></div>
-      <form id="watchlist-editor" hidden onsubmit="saveWatchlist(event)"><label for="watchlist-name">Watchlist name</label><input id="watchlist-name" name="name" class="form-input" required maxlength="60"><label for="watchlist-search">Search stocks by name, ticker or CODE</label><input id="watchlist-search" name="search" class="form-input" type="search" maxlength="80" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="stock-search-results" oninput="filterWatchlistChoices()" onkeydown="stockSearchKeydown(event)"><p id="stock-search-status" role="status" aria-live="polite"></p><div id="stock-search-results" role="listbox" aria-label="Stock suggestions"></div><fieldset><legend>Selected and saved stocks</legend><div id="watchlist-choices"></div></fieldset><button class="save-btn" type="submit">Save watchlist</button><button class="preview-btn" type="button" onclick="closeStockSuggestions();document.getElementById('watchlist-editor').hidden=true">Cancel</button></form><div id="watchlist-message" role="status" aria-live="polite"></div><div id="watchlist-table"></div>
+      <form id="watchlist-editor" hidden onsubmit="saveWatchlist(event)"><label for="watchlist-name">Watchlist name</label><input id="watchlist-name" name="name" class="form-input" required maxlength="60"><label for="watchlist-search">Search stocks (Yahoo Finance)</label><input id="watchlist-search" name="search" class="form-input" type="search" maxlength="80" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="stock-search-results" oninput="filterWatchlistChoices()" onkeydown="stockSearchKeydown(event)"><p id="stock-search-status" role="status" aria-live="polite"></p><div id="stock-search-results" role="listbox" aria-label="Stock suggestions"></div><fieldset><legend>Selected and saved stocks</legend><div id="watchlist-choices"></div></fieldset><button class="save-btn" type="submit">Save watchlist</button><button class="preview-btn" type="button" onclick="closeStockSuggestions();document.getElementById('watchlist-editor').hidden=true">Cancel</button></form><div id="watchlist-message" role="status" aria-live="polite"></div><div id="watchlist-table"></div>
     </div>
 
     <!-- TRADES TAB -->
@@ -549,9 +606,9 @@ input,button,select{font-family:'DM Mono',monospace}
       <div class="upload-divider"><span>Or Log Trade Manually</span></div>
 
       <div class="trade-form-grid">
-        <div class="form-group"><label for="t-stock-name">Search stock (Yahoo Finance)</label><input id="t-stock-name" class="form-input" list="t-stock-options" placeholder="Company name or Yahoo symbol…" maxlength="80" autocomplete="off" oninput="searchTradeStocks()" onchange="populateTickerFromStock()"/><datalist id="t-stock-options"></datalist><span id="trade-search-status" role="status" aria-live="polite"></span></div>
-        <div class="form-group"><label for="t-ticker">Ticker (editable before logging)</label><input id="t-ticker" class="form-input" placeholder="e.g., NSE:RELIANCE"/></div>
-        <div class="form-group"><label for="t-yahoo-code">Yahoo Finance Code</label><input id="t-yahoo-code" class="form-input" placeholder="e.g., RELIANCE.NS" autocomplete="off" spellcheck="false"/></div>
+        <div class="form-group"><label for="t-stock-name">Search stock (Yahoo Finance)</label><input id="t-stock-name" class="form-input" placeholder="Company name or Yahoo symbol…" maxlength="80" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="t-stock-options" oninput="searchTradeStocks()" onkeydown="tradeStockSearchKeydown(event)" onblur="closeTradeStockSuggestions()"/><div id="t-stock-options" role="listbox" aria-label="Yahoo Finance stocks"></div><span id="trade-search-status" role="status" aria-live="polite"></span></div>
+        <input id="t-ticker" type="hidden"/>
+        <input id="t-yahoo-code" type="hidden"/>
         <div class="form-group"><label>Type</label><select id="t-type" class="form-input form-select"><option value="BUY">BUY</option><option value="SELL">SELL</option></select></div>
         <div class="form-group"><label>Shares</label><input id="t-shares" class="form-input" type="number" placeholder="10" min="0.001" step="any"/></div>
         <div class="form-group"><label>Price (0 for bonus BUY)</label><input id="t-price" class="form-input" type="number" placeholder="2300" min="0" step="any"/></div>
@@ -582,7 +639,25 @@ input,button,select{font-family:'DM Mono',monospace}
       <div class="page-title">Settings</div>
       <div class="page-sub">Manage your SIP strategy</div>
 
-      <div id="settings-strategy" >
+      <div class="settings-tabs" role="tablist" aria-label="Settings sections">
+        <button type="button" id="settings-tab-strategy" role="tab" aria-selected="true" aria-controls="settings-strategy" onclick="switchSettingsView('strategy')" onkeydown="onSettingsTabKey(event,'strategy')">Portfolio Allocation Strategy</button>
+        <button type="button" id="settings-tab-override" role="tab" aria-selected="false" aria-controls="settings-override" tabindex="-1" onclick="switchSettingsView('override')" onkeydown="onSettingsTabKey(event,'override')">Stock Allocation Override</button>
+      </div>
+      <div id="settings-strategy" role="tabpanel" aria-labelledby="settings-tab-strategy">
+      <form class="settings-card" id="growth-target-form" onsubmit="event.preventDefault();saveGrowthTarget()">
+        <label class="settings-label" for="set-target-growth">Target Growth (% per year)</label>
+        <input class="settings-input" id="set-target-growth" name="target_growth_pct" type="number" min="0" max="1000" step="any" required value="30" aria-describedby="growth-target-hint">
+        <p id="growth-target-hint" class="settings-hint">Your annual portfolio growth target. Rebalance Losers includes holdings with an ATH older than your configured ATH age and XIRR below this target. Default: 30%.</p>
+        <button type="submit" id="save-growth-target" class="save-btn">Save Target Growth</button>
+        <p id="growth-target-message" role="status"></p>
+      </form>
+      <form class="settings-card" id="ath-age-form" aria-label="Rebalance ATH age" onsubmit="event.preventDefault();saveAthAge()">
+        <label class="settings-label" for="set-ath-age">Rebalance ATH Age (days)</label>
+        <input class="settings-input" id="set-ath-age" name="ath_age_days" type="number" min="0" max="9007199254740991" step="1" required value="365" aria-describedby="ath-age-hint">
+        <p id="ath-age-hint" class="settings-hint">Current rebalance includes holdings whose ATH was more than this many days ago and whose XIRR is below your growth target. Holdings without XIRR are excluded. Default: 365 days.</p>
+        <button type="submit" id="save-ath-age" class="save-btn">Save ATH Age</button>
+        <p id="ath-age-message" role="status"></p>
+      </form>
       <form id="sip-config-form" action="/api/sip-config" method="post" onsubmit="event.preventDefault();saveSIPConfig()">
       <div class="settings-card">
         <label class="settings-label" for="set-budget">Allocation per stock</label>
@@ -600,6 +675,7 @@ input,button,select{font-family:'DM Mono',monospace}
       <div id="settings-msg" role="alert" tabindex="-1" style="font-size:12px;color:#00ffb4;margin-top:10px;display:none"></div>
       </form>
       </div>
+      <div id="settings-override" role="tabpanel" aria-labelledby="settings-tab-override" hidden>
       <form class="settings-card" id="stock-budget-form" onsubmit="event.preventDefault();saveStockBudget(false)">
         <label for="stock-budget-select" class="settings-label">Stock allocation override</label>
         <select id="stock-budget-select" class="form-input" required onchange="showStockBudget()"></select>
@@ -610,6 +686,7 @@ input,button,select{font-family:'DM Mono',monospace}
         <button class="preview-btn" type="button" onclick="saveStockBudget(true)">Use default budget</button>
         <p id="stock-budget-message" role="status" aria-live="polite"></p>
       </form>
+      </div>
 
 
     </div>
@@ -713,7 +790,6 @@ let adminNewRowOpen = true;
 // Live portfolio state — updated as prices arrive
 let portfolioHoldings = [];
 let priceMap = {}; // ticker ? { price, changePct, change, name, ath }
-let tradeWatchlistLoaded = false;
 let tradeStockTickerByLabel = new Map();
 
 const fmt  = n => new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:0}).format(n);
@@ -721,7 +797,6 @@ const fmtD = n => new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR'
 
 let priceCacheReady=null,priceCacheTimer=null,accountUnavailable=false;
 async function api(path, opts={}) {
-  if(priceCacheReady&&path!=='/api/prices/refresh')await priceCacheReady;
   if(accountUnavailable)return {success:false,error:'Tech error please reach admin.'};
   const headers={'Content-Type':'application/json',...(TOKEN?{Authorization:`Bearer ${TOKEN}`}:{})};
   const r=await fetch(BASE+path,{headers,...opts});
@@ -763,10 +838,70 @@ function showPublicPage(name, el){
 window.addEventListener("hashchange", ()=>{
   if(location.hash.startsWith("#public-")) showPublicPage(location.hash.replace("#public-", ""));
 });
+let resetStep='request',resetEmail='',resetToken='',resetFlowVersion=0,resetResendAt=0;
 showPublicPage(publicPage);
+
+function resetView(step){
+  resetStep=step;
+  for(const field of ['email','code','password','confirm']){
+    const active=step==='request'?field==='email':step==='verify'?field==='code':['password','confirm'].includes(field);
+    document.getElementById('reset-'+field+'-field').hidden=!active;
+    const input=document.getElementById('reset-'+field);input.disabled=!active;input.required=active;
+  }
+  document.getElementById('reset-help').textContent=step==='request'?'Step 1 of 3: Enter your account email.':step==='verify'?'Step 2 of 3: Enter the six-digit code sent to '+resetEmail+'. It expires in 10 minutes.':'Step 3 of 3: Choose your new password.';
+  document.getElementById('reset-btn').textContent={request:'Send verification code',verify:'Verify code',reset:'Update password'}[step];
+  document.getElementById('reset-resend').hidden=step!=='verify';
+  document.getElementById('reset-'+(step==='request'?'email':step==='verify'?'code':'password')).focus();
+}
+function openPasswordReset(){
+  showAuthTab('reset');
+  document.getElementById('auth-reset').style.display='block';
+  document.getElementById('reset-form').reset();
+  document.getElementById('reset-email').value=document.getElementById('login-email').value.trim();
+  document.getElementById('reset-btn').disabled=false;
+  document.getElementById('reset-resend').disabled=false;
+  setAuthMsg('reset-msg','');resetView('request');
+}
+async function resetApi(action,body){
+  try{
+    const response=await fetch(BASE+'/api/auth/password-reset/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(20000)});
+    return await response.json();
+  }catch{return {success:false,error:'Cannot reach server. Please try again.'};}
+}
+document.getElementById('reset-form').addEventListener('submit',async event=>{
+  event.preventDefault();
+  const version=resetFlowVersion,step=resetStep,btn=document.getElementById('reset-btn');
+  if(btn.disabled)return;
+  const password=document.getElementById('reset-password').value;
+  if(step==='reset'&&password!==document.getElementById('reset-confirm').value)return setAuthMsg('reset-msg','Passwords do not match.');
+  if(step==='reset'&&new TextEncoder().encode(password).length>72)return setAuthMsg('reset-msg','Password must be at most 72 UTF-8 bytes.');
+  if(step==='request')resetEmail=document.getElementById('reset-email').value.trim().toLowerCase();
+  btn.disabled=true;document.getElementById('reset-resend').disabled=true;btn.textContent='Please wait…';setAuthMsg('reset-msg','');
+  const result=await resetApi(step,step==='request'?{email:resetEmail}:step==='verify'?{email:resetEmail,code:document.getElementById('reset-code').value}:{reset_token:resetToken,password});
+  if(version!==resetFlowVersion)return;
+  btn.disabled=false;document.getElementById('reset-resend').disabled=false;
+  resetView(step);
+  if(!result.success)return setAuthMsg('reset-msg',result.error);
+  if(step==='request'){resetResendAt=Date.now()+60000;resetView('verify');setAuthMsg('reset-msg',result.message,true);}
+  else if(step==='verify'){resetToken=result.reset_token;document.getElementById('reset-code').value='';resetView('reset');setAuthMsg('reset-msg','Email verified.',true);}
+  else{showAuthTab('login',document.querySelector('.auth-tab'));document.getElementById('login-email').value=resetEmail;document.getElementById('login-password').value='';setAuthMsg('login-msg',result.message,true);document.getElementById('login-password').focus();}
+});
+document.getElementById('reset-resend').addEventListener('click',async()=>{
+  if(Date.now()<resetResendAt)return setAuthMsg('reset-msg','Please wait '+Math.ceil((resetResendAt-Date.now())/1000)+' seconds before resending.');
+  const version=resetFlowVersion,button=document.getElementById('reset-resend');button.disabled=true;document.getElementById('reset-btn').disabled=true;
+  const result=await resetApi('request',{email:resetEmail});
+  if(version!==resetFlowVersion)return;
+  button.disabled=false;document.getElementById('reset-btn').disabled=false;
+  if(result.success){resetResendAt=Date.now()+60000;document.getElementById('reset-code').value='';}
+  setAuthMsg('reset-msg',result.message||result.error,result.success);
+});
 
 // -- AUTH ---------------------------------
 function showAuthTab(tab,el){
+  document.getElementById('auth-reset').style.display='none';
+  resetFlowVersion++; resetToken='';
+  document.getElementById('reset-password').value='';
+  document.getElementById('reset-confirm').value='';
   document.getElementById('auth-login').style.display=tab==='login'?'block':'none';
   document.getElementById('auth-signup').style.display=tab==='signup'?'block':'none';
   document.querySelectorAll('.auth-tab').forEach(t=>t.classList.remove('active'));
@@ -835,23 +970,32 @@ async function doAdminLogin(){
   saveAdminSession(j.token,j.user);
 }
 function showApp(){
+  setTimeout(()=>window.refreshCorporateActionCount?.(true),0);
   document.getElementById('auth-screen').style.display='none';
   document.getElementById('admin-screen').style.display='none';
   document.getElementById('app-screen').style.display='block';
   document.getElementById('user-email-display').textContent=USERINFO?.name||USERINFO?.email||'';
   document.getElementById('t-date').value=new Date().toISOString().substring(0,10);
-  warmSessionPrices();
   if(priceCacheTimer)clearInterval(priceCacheTimer);
   priceCacheTimer=setInterval(()=>{if(TOKEN)warmSessionPrices();},30*60*1000);
   loadSettings();
   switchTab('portfolio',document.querySelector(".side-tab[onclick*=portfolio]"));
+  warmSessionPrices();
 }
 function warmSessionPrices(){
+  if(priceCacheReady)return priceCacheReady;
   const status=document.getElementById('price-cache-status');
-  if(status)status.textContent='Checking the shared 30-minute price cache…';
-  priceCacheReady=api('/api/prices/refresh',{method:'POST'}).then(result=>{
-    if(status)status.textContent=!result.success?'Price refresh unavailable. Showing previously cached quotes.':result.summary?.refreshing?'A shared price refresh is in progress.':result.summary?.failed?`Shared prices ready. ${result.summary.failed} stocks could not be refreshed.`:'Prices use the shared 30-minute Yahoo cache.';
-  }).catch(()=>{if(status)status.textContent='Price refresh unavailable. Showing previously cached quotes.';});
+  if(status)status.textContent='Showing saved prices. Checking for updates in the background…';
+  priceCacheReady=api('/api/prices/refresh',{method:'POST',priority:'low'}).then(result=>{
+    if(result.success&&document.getElementById('tab-opportunities-beta')?.classList?.contains('active'))loadOpportunityBeta();
+    if(status)status.textContent=!result.success?'Price refresh unavailable. Showing previously cached quotes.':result.summary?.marketClosed?'Market closed. Showing saved prices. Updates run Monday–Friday, 9:00 AM–3:30 PM IST.':result.summary?.refreshing?'Showing saved prices while a shared refresh runs.':result.summary?.failed?`Price update finished. ${result.summary.failed} stocks could not be refreshed. Reopen a tab to load updated prices.`:'Price cache is ready. Reopen a tab to load updated prices.';
+    if(status){
+      const updatedAt=Date.parse(result.summary?.last_price_updated_at);
+      const updatedTime=Number.isFinite(updatedAt)?new Intl.DateTimeFormat('en-IN',{timeZone:'Asia/Kolkata',day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true}).format(new Date(updatedAt))+' IST':'Unavailable';
+      status.textContent+=' Last price updated: '+updatedTime+'.';
+      status.title='Time of the most recently fetched saved quote. Individual stocks may have older prices.';
+    }
+  }).catch(()=>{if(status)status.textContent='Price refresh unavailable. Showing previously cached quotes.';}).finally(()=>{priceCacheReady=null;});
   return priceCacheReady;
 }
 function showAdminApp(){
@@ -859,7 +1003,7 @@ function showAdminApp(){
 }
 const IS_ADMIN_PATH = location.pathname.replace(/\/+$/, '').endsWith('/admin');
 if(IS_ADMIN_PATH) showAdminApp();
-else if(TOKEN&&USERINFO) showApp();
+else if(TOKEN&&USERINFO) queueMicrotask(()=>showApp());
 
 function escapeHtml(value){
   return String(value ?? "").replace(/[&<>"']/g, ch => ({
@@ -1081,9 +1225,13 @@ function switchTab(name,el){
   if(el) el.classList.add('active');
   if(name==='portfolio'){ switchPortfolioView('holdings'); loadPortfolio(); }
   if(name==='opportunities') loadPortfolioOpportunities();
+  if(name==='opportunities-beta') loadOpportunityBeta();
   if(name==='watchlist') loadWatchlistTable();
-  if(name==='trades')   { loadTrades(); loadTradeStockOptions(); }
+  if(name==='trades')   { loadTrades(); }
   if(name==='settings')  loadSettings();
+  if(name==='corporate-actions') loadCorporateActions();
+  if(name==='tax-harvesting') loadTaxHarvesting();
+  if(name==='results-analysis') loadQuarterlyResults();
 }
 
 function daysSinceAth(value, now = new Date()){
@@ -1176,7 +1324,7 @@ let userWatchlists=[],editingWatchlistId=null,watchlistRenderVersion=0;
 async function refreshWatchlistChoices(){
   const response=await api('/api/watchlists');if(!response.success)throw new Error(response.error);
   userWatchlists=response.data;
-  for(const id of ['watchlist-select','opportunity-watchlist-select']){
+  for(const id of ['watchlist-select','opportunity-watchlist-select','beta-watchlist-select']){
     const select=document.getElementById(id),previous=select.value;
     select.replaceChildren(...userWatchlists.map(list=>new Option(list.name,list.id)));
     if(userWatchlists.some(list=>String(list.id)===previous))select.value=previous;
@@ -1205,9 +1353,9 @@ async function openWatchlistEditor(edit){
     const selected=new Set(current.data.map(s=>s.ticker));
     document.getElementById('watchlist-name').value=edit?userWatchlists.find(l=>String(l.id)===editingWatchlistId).name:'';
     document.getElementById('watchlist-search').value='';
-    closeStockSuggestions();document.getElementById('stock-search-status').textContent='Type a company name or symbol. Stocks not found locally are searched on Yahoo automatically. Save your watchlist to add new stocks to the OnePiece universe.';
+    closeStockSuggestions();document.getElementById('stock-search-status').textContent='Search Yahoo Finance by company name or symbol.';
     const choices=document.getElementById('watchlist-choices');choices.replaceChildren();
-    for(const stock of universe.data){const label=document.createElement('label'),input=document.createElement('input');input.type='checkbox';input.name='ticker';input.value=stock.ticker;input.checked=selected.has(stock.ticker);label.append(input,document.createTextNode(' '+stock.name+' | '+stock.ticker+' | '+(stock.code||'—')+' | '+(stock.yahoo_finance_code||'')));choices.append(label);}
+    for(const stock of universe.data){const label=document.createElement('label'),input=document.createElement('input');input.type='checkbox';input.name='ticker';input.value=stock.ticker;input.dataset.yahooSymbol=stock.yahoo_finance_code||'';input.checked=selected.has(stock.ticker);label.append(input,document.createTextNode(' '+stock.name+' | '+stock.ticker+' | '+(stock.code||'—')+' | '+(stock.yahoo_finance_code||'')));choices.append(label);}
     document.getElementById('watchlist-editor').hidden=false;document.getElementById('watchlist-name').focus();
   }catch(error){message.textContent=error.message;}
 }
@@ -1221,11 +1369,11 @@ function showStockSuggestions(rows){
  const results=document.getElementById('stock-search-results'),search=document.getElementById('watchlist-search');results.replaceChildren();stockSuggestionIndex=-1;
  rows.forEach((stock,index)=>{
   const option=document.createElement('div');option.id='stock-suggestion-'+index;option.setAttribute('role','option');option.setAttribute('aria-selected','false');option.className='stock-suggestion';
-  option.textContent=stock.name+' | '+stock.symbol+(stock.local?' | Saved stock':' | Yahoo');
+  option.textContent=stock.name+' | '+stock.symbol;
   option.addEventListener('mousedown',e=>e.preventDefault());
   option.addEventListener('click',()=>{
    const choices=document.getElementById('watchlist-choices');let input=stock.local;
-   if(!input){input=[...choices.querySelectorAll('input')].find(x=>x.value===stock.symbol);}
+   if(!input){input=[...choices.querySelectorAll('input')].find(x=>x.value===stock.symbol||x.dataset.yahooSymbol===stock.symbol);}
    if(!input){const label=document.createElement('label');input=document.createElement('input');input.type='checkbox';input.name='discovered';input.value=stock.symbol;input.dataset.discovered='true';label.append(input,document.createTextNode(' '+stock.name+' | '+stock.symbol));choices.prepend(label);}
    input.checked=true;input.parentElement.hidden=false;search.value='';closeStockSuggestions();
    choices.querySelectorAll('label').forEach(label=>label.hidden=false);
@@ -1249,9 +1397,7 @@ async function searchIndianStocks(q,version){
   const response=await api('/api/stocks/search?q='+encodeURIComponent(q));
   if(version!==stockSearchVersion||document.getElementById('watchlist-editor').hidden)return;
   if(!response.success)throw new Error(response.error);
-  const labels=[...document.querySelectorAll('#watchlist-choices label')];
-  const local=labels.filter(label=>label.textContent.toLowerCase().includes(q)).map(label=>({name:label.textContent.trim(),symbol:label.querySelector('input').value,local:label.querySelector('input')}));
-  showStockSuggestions([...local,...response.data.filter(s=>!labels.some(label=>label.querySelector('input').value===s.symbol))]);
+  showStockSuggestions(response.data);
   status.textContent=response.data.length?'Choose a suggestion. New stocks join the OnePiece universe when you save.':'No Indian stocks found. Try an exact symbol ending .NS or .BO.';
  }catch(error){if(version===stockSearchVersion)status.textContent=error.message;}
 }
@@ -1259,8 +1405,6 @@ function filterWatchlistChoices(){
  closeStockSuggestions();const q=document.getElementById('watchlist-search').value.trim().toLowerCase(),status=document.getElementById('stock-search-status');
  const labels=[...document.querySelectorAll('#watchlist-choices label')];labels.forEach(label=>label.hidden=!!q&&!label.textContent.toLowerCase().includes(q)&&!label.querySelector('input').checked);
  if(q.length<2){status.textContent='Type at least 2 characters to search.';return;}
- const matches=labels.filter(label=>label.textContent.toLowerCase().includes(q)).map(label=>({name:label.textContent.trim(),symbol:label.querySelector('input').value,local:label.querySelector('input')}));
- if(matches.length)showStockSuggestions(matches);
  status.textContent='Searching NSE / BSE on Yahoo…';const version=stockSearchVersion;
  stockSearchTimer=setTimeout(()=>searchIndianStocks(q,version),350);
 }
@@ -1305,7 +1449,58 @@ async function loadOpportunityScope(scope='portfolio'){
   if(opportunityScope!==scope)return;
   if(!j.success){target.innerHTML=`<div class="error-box">${escapeHtml(j.error||'Unable to load opportunities')}</div>`;return;}
   opportunityRows=sortByDaysSinceAth(j.data.rows);
-target.innerHTML=`<div class="sheet-table-wrap"><table class="sheet-table"><thead><tr><th>Stock / CODE</th><th>Price</th><th>ATH</th><th>ATH date</th><th scope="col" aria-sort="ascending" title="Days since ATH, lowest first">Days Since</th>${j.data.levels.map(l=>`<th>${l.fall}% zone<br><small>${l.allocation}% allocation</small></th>`).join('')}</tr></thead><tbody>${opportunityRows.map((row,i)=>`<tr><td><b>${escapeHtml(row.name)}</b><br><small>${escapeHtml(row.ok_code||'—')}</small></td><td>${row.price==null?'—':fmt(row.price)}${row.quote_error?'<br><small>'+escapeHtml(row.quote_error)+'</small>':''}</td><td>${row.ath==null?'—':fmt(row.ath)}</td><td>${row.ath_date||'—'}</td><td>${row.days_since ?? '—'}</td>${row.levels.map((level,k)=>`<td class="${level.active?'opportunity-active':''}"><label><input type="checkbox" disabled title="Calculated from buy trades" aria-label="${escapeHtml(row.name)} ${level.fall}% zone" data-op-row="${i}" data-op-level="${k}" ${level.selected?'checked':''}><span title="Rounded display range; trade selection uses exact percentage boundaries">${opportunityPriceRange(level,row.levels[k+1])}<br><small>Zone budget: ${fmt(level.allocated_amount||0)}<br>Available through zone: ${fmt(level.remaining_amount||0)}${level.active?`<br>Suggested: ${fmt(level.suggested_amount||0)} | ${level.shares_to_buy||0} buy`:""}</small>${Number(level.invested_amount)||Number(level.bought_quantity)?`<br><small style="color:#4ade80" title="Total buys in this zone">Invested: ${fmt(level.invested_amount||0)} | ${Number(level.bought_quantity||0).toLocaleString('en-IN',{maximumFractionDigits:8})} bought</small>`: ''}</span></label></td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+target.innerHTML=`<div class="sheet-table-wrap"><table class="sheet-table"><thead><tr><th>Stock / CODE</th><th>Price</th><th>ATH</th><th>ATH date</th><th scope="col" aria-sort="ascending" title="Days since ATH, lowest first">Days Since</th>${j.data.levels.map(l=>`<th>${l.fall}% zone<br><small>${l.allocation}% allocation</small></th>`).join('')}</tr></thead><tbody>${opportunityRows.map((row,i)=>`<tr><td><b>${escapeHtml(row.name)}</b><br><small>${escapeHtml(row.ok_code||'—')}</small></td><td>${row.price==null?'—':fmt(row.price)}${row.quote_error?'<br><small>'+escapeHtml(row.quote_error)+'</small>':''}</td><td>${row.ath==null?'—':fmt(row.ath)}</td><td>${row.ath_date||'—'}</td><td>${row.days_since ?? '—'}</td>${row.levels.map((level,k)=>`<td class="${level.active?'opportunity-active':''}"><label><input type="checkbox" disabled title="Calculated from buy trades" aria-label="${escapeHtml(row.name)} ${level.fall}% zone" data-op-row="${i}" data-op-level="${k}" ${level.selected?'checked':''}><span title="Rounded display range; trade selection uses exact percentage boundaries">${opportunityPriceRange(level,row.levels[k+1])}<br><small>${fmt(level.allocated_amount||0)} | ${level.shares_to_buy||0} buy</small>${Number(level.invested_amount)||Number(level.bought_quantity)?`<br><small style="color:#4ade80" title="Total buys in this zone">Invested: ${fmt(level.invested_amount||0)} | ${Number(level.bought_quantity||0).toLocaleString('en-IN',{maximumFractionDigits:8})} bought</small>`: ''}</span></label></td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
+
+let opportunityBetaScope='portfolio',opportunityBetaVersion=0;
+async function loadOpportunityBeta(scope=opportunityBetaScope){
+  opportunityBetaScope=scope;
+  const version=++opportunityBetaVersion,target=document.getElementById('beta-table');
+  document.getElementById('beta-watchlist-controls').hidden=scope!=='watchlist';
+  for(const name of ['portfolio','watchlist']){
+    const button=document.getElementById('beta-tab-'+name);
+    button.classList.toggle('active',scope===name);button.setAttribute('aria-pressed',String(scope===name));
+  }
+  target.innerHTML='<div class="loading-row">Loading carry-forward suggestions…</div>';
+  try{
+    await refreshWatchlistChoices();
+    if(version!==opportunityBetaVersion)return;
+    const watchlist=document.getElementById('beta-watchlist-select').value;
+    const result=await api(`/api/portfolio-opportunities?mode=beta&scope=${encodeURIComponent(scope)}&watchlist_id=${encodeURIComponent(watchlist)}`);
+    if(version!==opportunityBetaVersion)return;
+    if(!result.success)throw Error(result.error||'Unable to load Opportunities Beta');
+    renderOpportunityBeta(result.data);
+  }catch(error){if(version===opportunityBetaVersion)target.innerHTML=`<div class="error-box">${escapeHtml(error.message)}</div>`;}
+}
+function renderBetaCycleHistory(cycle){
+  if(!cycle)return '';
+  const history=cycle.history||[];
+  return `<details class="beta-cycle-history"><summary>ATH cycle history (${history.length} previous)</summary><p>Current cycle started: ${escapeHtml(cycle.kind==='yahoo_history'?cycle.ath_date:cycle.reset_at)}<br>${cycle.kind==='yahoo_history'?'Reconstructed from Yahoo Finance ATH history':cycle.kind==='baseline'?'Initial tracking baseline':'New ATH reset'}</p><p>${escapeHtml(cycle.date_note||'')}</p>${history.map(old=>`<section><strong>ATH ${fmtD(old.ath)} · ${escapeHtml(old.kind==='yahoo_history'?old.ath_date:old.reset_at)}</strong><br><small>${old.kind==='yahoo_history'?'Yahoo-dated cycle':'Observed-date tracking record'}</small><p>Base investment: ${fmtD(old.base_invested)}<br>Cap at start: ${fmtD(old.cycle_cap)}<br>Closed: ${escapeHtml(old.closed_at)}<br>Last recorded: ${escapeHtml(old.snapshot?.as_of||'—')}</p><ul>${(old.snapshot?.levels||[]).map(level=>`<li>${Number(level.fall)}%: target ${level.cumulative_allocation==null?'—':fmtD(level.cumulative_allocation)}; suggested ${level.suggested_investment==null?'—':fmtD(level.suggested_investment)}${level.carry_forward_amount>0?' (+'+fmtD(level.carry_forward_amount)+')':''}</li>`).join('')}</ul></section>`).join('')}</details>`;
+}
+function renderOpportunityBeta(data){
+  const target=document.getElementById('beta-table'),rows=sortByDaysSinceAth(data.rows);
+  if(!rows.length){target.innerHTML='<div class="no-trigger-box">No stocks available for this source.</div>';return;}
+  const amount=value=>value==null||!Number.isFinite(Number(value))?'—':fmtD(value);
+  const recommendation=level=>level?`${amount(level.suggested_investment)}${level.carry_forward_amount>0?` <span class="beta-carry">(+${amount(level.carry_forward_amount)})</span>`:''} | ${level.suggested_quantity==null?'Quantity unavailable':Number(level.suggested_quantity).toLocaleString('en-IN')+' Shares'}`:'No active opportunity';
+  target.innerHTML=`<div class="sheet-table-wrap" role="region" aria-label="Opportunities Beta allocations" tabindex="0"><table class="sheet-table beta-table">
+    <caption>Cumulative investment targets — the current level shows the additional investment needed.</caption>
+    <thead><tr><th scope="col">Stock / CODE</th><th scope="col">Price / ATH</th><th scope="col">ATH date / Days since</th><th scope="col">Current opportunity</th>${data.levels.map(level=>`<th scope="col">${Number(level.fall)}% zone<br><small>${Number(level.allocation)}% allocation</small></th>`).join('')}</tr></thead>
+    <tbody>${rows.map(row=>`<tr><th scope="row"><b>${escapeHtml(row.name)}</b><br><small>${escapeHtml(row.ticker)}${row.ok_code?` · ${escapeHtml(row.ok_code)}`:''}</small><br><small>Budget: ${amount(row.max_budget)}<br>Already invested: ${amount(row.levels[0]?.total_invested)}<br>Cycle base: ${amount(row.levels[0]?.cycle_base_investment)}<br>Cycle cap: ${amount(row.levels[0]?.cycle_cap)}${row.beta_cycle?`<br>Cycle start: ${escapeHtml(row.beta_cycle.kind==='yahoo_history'?row.beta_cycle.ath_date:row.beta_cycle.reset_at?.slice(0,10)||'—')}`:''}</small>${row.levels[0]?.over_budget>0?`<br><small>Over budget: ${amount(row.levels[0].over_budget)}</small>`:''}</th>
+      <td>${amount(row.price)} / ${amount(row.ath)}<br><small>ATH decline: ${row.price>0&&row.ath>0?((row.price/row.ath-1)*100).toFixed(2)+'%':'—'}</small>${row.quote_error?`<br><small>${escapeHtml(row.quote_error)}</small>`:''}</td>
+      <td>${escapeHtml(row.ath_date||'—')}<br>${row.days_since??'—'} days</td>
+      <td class="beta-current">${(()=>{const index=row.levels.findIndex(level=>level.active),level=row.levels[index];return level?`<strong>Level ${index+1} · ${level.fall}%</strong><p>Cumulative target: ${amount(level.cumulative_allocation)}</p><p class="beta-result">${recommendation(level)}</p>${level.investment_error?`<small>${escapeHtml(level.investment_error)}</small>`:''}`:'No active opportunity';})()}${renderBetaCycleHistory(row.beta_cycle)}</td>
+      ${row.levels.map((level,index)=>`<td class="${level.active?'opportunity-active':''}">
+        <strong>${level.active?'Current zone':'Preview'}</strong><br><small>${opportunityPriceRange(level,row.levels[index+1])}</small>
+        <dl class="beta-breakdown"><dt class="beta-target">Cumulative target</dt><dd class="beta-target">${amount(level.cumulative_allocation)}</dd>
+        <dt>This level allocation</dt><dd>${amount(level.allocated_amount)}</dd>
+        <dt>Already invested (cycle)</dt><dd>${amount(level.cycle_invested)}</dd>
+        <dt>Total exposure target</dt><dd>${amount(level.total_exposure_target)}</dd>
+        <dt>Unused previous allocation</dt><dd>${amount(level.carry_forward_amount)}</dd>
+
+        <dt class="beta-result">Suggested Investment</dt><dd class="beta-result">${amount(level.suggested_investment)}${level.carry_forward_amount>0?` <span class="beta-carry">(+${amount(level.carry_forward_amount)})</span>`:''}</dd>
+        <dt>Suggested Quantity</dt><dd>${level.suggested_quantity==null?'Unavailable':Number(level.suggested_quantity).toLocaleString('en-IN')+' Shares'}</dd></dl>
+        ${level.investment_error?`<small>${escapeHtml(level.investment_error)}</small>`:''}
+      </td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
 
 // -- SIP ----------------------------------
@@ -1356,7 +1551,7 @@ function renderSIP(d){
 
 // -- PORTFOLIO — async per-stock price loading ---------------------------------
 function switchPortfolioView(view){
-  for(const name of ['holdings','allocation','rebalancing']){
+  for(const name of ['holdings','allocation','rebalancing','history']){
     const active = name === view;
     const button = document.getElementById('portfolio-tab-'+name);
     button.classList.toggle('active',active);
@@ -1365,13 +1560,14 @@ function switchPortfolioView(view){
     document.getElementById('portfolio-'+name).hidden = !active;
   }
   if(view==='rebalancing')loadRebalancing();
+  if(view==='history')loadPortfolioHistory();
 }
 
 function onPortfolioTabKey(event,view){
   if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
   event.preventDefault();
-  const tabs=['holdings','allocation','rebalancing'];
-  const next = event.key==='Home'?tabs[0]:event.key==='End'?tabs[2]:tabs[(tabs.indexOf(view)+(event.key==='ArrowRight'?1:2))%3];
+  const tabs=['holdings','allocation','rebalancing','history'];
+  const next = event.key==='Home'?tabs[0]:event.key==='End'?tabs[tabs.length-1]:tabs[(tabs.indexOf(view)+(event.key==='ArrowRight'?1:tabs.length-1))%tabs.length];
   switchPortfolioView(next);
   document.getElementById('portfolio-tab-'+next).focus();
 }
@@ -1454,6 +1650,7 @@ function renderPortfolioAllocation(){
 }
 
 async function loadPortfolio(){
+  portfolioXirrPct=null;
   allocationLoadState = 'loading';
   setAllocationBasis('cost');
   document.getElementById('allocation-content').innerHTML='<div class="no-trigger-box">Loading allocation…</div>';
@@ -1477,16 +1674,18 @@ async function loadPortfolio(){
   }
   portfolioHoldings = j.data.holdings;
   portfolioXirrEligible=j.data.xirr_eligible===true;
+  portfolioXirrPct=Number.isFinite(j.data.xirr_pct)?j.data.xirr_pct:null;
   allocationLoadState = 'ready';
   renderPortfolioAllocation();
 
   if(!portfolioHoldings.length){
     document.getElementById('port-summary').innerHTML=`
-      <div class="stat-card"><div class="stat-label">Portfolio Value</div><div class="stat-value">?0</div></div>
+      <div class="stat-card"><div class="stat-label">Portfolio Value</div><div class="stat-value" id="sv-value">₹0</div></div>
       <div class="stat-card"><div class="stat-label">Cost Value</div><div class="stat-value" style="color:rgba(255,255,255,.6)">?0</div></div>
       <div class="stat-card"><div class="stat-label">Total P&L</div><div class="stat-value">?0</div></div>
-      <div class="stat-card featured"><div class="stat-label">Portfolio XIRR</div><div class="stat-value" style="color:rgba(255,255,255,.6)">—</div></div>`;
-    document.getElementById('port-table').innerHTML='<div class="no-trigger-box">No holdings yet. Import trades or log a BUY in the Trades tab.</div>';
+      <div class="stat-card featured"><div class="stat-label">Portfolio XIRR</div><div class="stat-value" id="sv-xirr" style="color:rgba(255,255,255,.6)">—</div></div>`;
+    document.getElementById('port-table').innerHTML='<div class="no-trigger-box">No current holdings. Import trades or log a BUY in the Trades tab.</div>';
+    updateSummaryCards(0,true);
     return;
   }
 
@@ -1503,7 +1702,7 @@ async function loadPortfolio(){
   const totalCost = portfolioHoldings.reduce((s,h)=>s+h.avg_price*h.shares,0);
   document.getElementById('sv-cost').textContent = fmt(totalCost);
 
-  // 6. Fetch prices asynchronously — one at a time to avoid NSE rate-limiting
+  // 6. Read saved Yahoo quotes; these requests never contact the provider.
   let loaded = 0;
   const tickers = portfolioHoldings.map(h=>h.ticker);
 
@@ -1534,9 +1733,12 @@ async function loadPortfolio(){
     progressWrap.style.display='none';
     const loaded=Object.values(priceMap).filter(Boolean).length;
     const failed=tickers.length-loaded;
+    const quotes=Object.values(priceMap).filter(Boolean);
+    const times=quotes.map(q=>Date.parse(q.quote_fetched_at)).filter(Number.isFinite);
+    const oldest=times.length?new Date(Math.min(...times)).toLocaleString('en-IN'):null;
+    const stale=quotes.some(q=>q.stale);
     document.getElementById('price-status').textContent=
-      failed>0 ? `? ${loaded}/${tickers.length} prices loaded · ${failed} failed (NSE may be rate-limiting)` :
-                 `? All ${loaded} prices loaded · NSE India · 5min cache`;
+      `${loaded}/${tickers.length} saved prices loaded${failed?` · ${failed} unavailable`:''} · Yahoo Finance${oldest?` · Oldest update: ${oldest}`:''}${stale?' · Some prices are older than 30 minutes':''}`;
   },300);
 }
 
@@ -1660,7 +1862,7 @@ function updateSummaryCards(totalCost, pricesLoaded=false){
   const pct = totalCost>0 ? (totalPnL/totalCost*100).toFixed(2) : 0;
 
   const valEl=document.getElementById('sv-value');
-  if(valEl){ valEl.style.color='#fff'; valEl.textContent=fmt(totalValue); }
+  if(valEl){ valEl.style.color='#fff'; valEl.textContent=fmt(totalValue); renderPortfolioDayChange(valEl,portfolioHoldings,priceMap,pricesLoaded); }
   const costEl=document.getElementById('sv-cost');
   if(costEl) costEl.textContent=fmt(totalCost);
   const pnlEl=document.getElementById('sv-pnl');
@@ -1730,18 +1932,10 @@ function calcXIRR(trades, livePrice){
   return xirrFromCashflows(cfs);
 }
 
-let portfolioXirrEligible=false;
+let portfolioXirrEligible=false,portfolioXirrPct=null;
 function calcPortfolioXIRR(){
   if(!portfolioXirrEligible)return null;
-  const cfs=[];
-  for(const h of portfolioHoldings){
-    cfs.push(...cashflowsFromTrades(h.trades||[]));
-    const pd = priceMap[h.ticker];
-    const rem=(h.trades||[]).reduce((s,t)=>s+(t.type==='BUY'?t.shares:-t.shares),0);
-    if(rem>0.0001 && !(Number.isFinite(pd?.price) && pd.price>0)) return null;
-    if(rem>0.0001 && pd?.price>0) cfs.push({amount:rem*pd.price,date:new Date()});
-  }
-  return xirrFromCashflows(cfs);
+  return Number.isFinite(portfolioXirrPct)?portfolioXirrPct:null;
 }
 
 // -- XIRR MODAL ----------------------------
@@ -1954,55 +2148,38 @@ async function doImport(){
 }
 
 // -- MANUAL TRADES -------------------------
-async function loadTradeStockOptions(){
-  const input=document.getElementById('t-stock-name');
-  const list=document.getElementById('t-stock-options');
-  if(!input || !list || tradeWatchlistLoaded) return;
-  input.placeholder='Loading watchlist…';
-  const j=await api('/api/watchlist/table');
-  if(!j.success){
-    input.placeholder='Watchlist unavailable — enter ticker manually';
-    return;
-  }
-  const stocks=new Map();
-  (j.data||[]).forEach(stock=>{
-    const stockCode=String(stock.stock_code||'').trim().toUpperCase();
-    if(!stockCode || stocks.has(stockCode)) return;
-    stocks.set(stockCode,String(stock.name||stockCode).trim());
-  });
-  list.innerHTML='';
-  tradeStockTickerByLabel.clear();
-  stocks.forEach((name,stockCode)=>{
-    const option=document.createElement('option');
-    const label=`${name} — ${stockCode}`;
-    option.value=label;
-    list.appendChild(option);
-    tradeStockTickerByLabel.set(label,stockCode);
-  });
-  (j.data||[]).forEach(stock=>{
-    const code=String(stock.stock_code||'').trim().toUpperCase();
-    const label=`${String(stock.name||code).trim()} — ${code}`;
-    tradeYahooByLabel.set(label,stock.yahoo_finance_code||'');
-  });
-  input.placeholder='Search company name or Yahoo symbol…';
-  tradeWatchlistLoaded=true;
-}
 function populateTickerFromStock(){
-  const label=document.getElementById('t-stock-name')?.value||'';
+  const label=(document.getElementById('t-stock-name')?.value||'').trim();
   const ticker=tradeStockTickerByLabel.get(label);
-  if(ticker) {
-    document.getElementById('t-ticker').value=ticker;
-    document.getElementById('t-yahoo-code').value=tradeYahooByLabel.get(label)||'';
-  }
+  document.getElementById('t-ticker').value=ticker||'';
+  document.getElementById('t-yahoo-code').value=ticker?(tradeYahooByLabel.get(label)||''):'';
 }
 const tradeYahooByLabel=new Map();
-let tradeSearchTimer,tradeSearchVersion=0;
+let tradeSearchTimer,tradeSearchVersion=0,tradeSuggestionIndex=-1;
+function closeTradeStockSuggestions(){
+  clearTimeout(tradeSearchTimer);tradeSearchVersion++;tradeSuggestionIndex=-1;
+  document.getElementById('t-stock-options').replaceChildren();
+  const input=document.getElementById('t-stock-name');input.setAttribute('aria-expanded','false');input.removeAttribute('aria-activedescendant');
+  document.getElementById('trade-search-status').textContent='';
+}
+function tradeStockSearchKeydown(event){
+  if(event.isComposing)return;
+  if(event.key==='Escape'||event.key==='Tab'){closeTradeStockSuggestions();return;}
+  const options=[...document.querySelectorAll('#t-stock-options [role="option"]')];
+  if(event.key==='Enter'){event.preventDefault();if(options.length)options[Math.max(0,tradeSuggestionIndex)].click();return;}
+  if(!options.length||!['ArrowDown','ArrowUp'].includes(event.key))return;
+  event.preventDefault();tradeSuggestionIndex=(tradeSuggestionIndex+(event.key==='ArrowDown'?1:-1)+options.length)%options.length;
+  options.forEach((option,i)=>option.setAttribute('aria-selected',String(i===tradeSuggestionIndex)));
+  document.getElementById('t-stock-name').setAttribute('aria-activedescendant',options[tradeSuggestionIndex].id);
+  options[tradeSuggestionIndex].scrollIntoView({block:'nearest'});
+}
 function searchTradeStocks(){
-  clearTimeout(tradeSearchTimer);const version=++tradeSearchVersion;
+  closeTradeStockSuggestions();const version=tradeSearchVersion;
   const q=document.getElementById('t-stock-name').value.trim();
-  if(tradeStockTickerByLabel.has(q)){populateTickerFromStock();return;}
+  populateTickerFromStock();
+  if(tradeStockTickerByLabel.has(q))return;
   const status=document.getElementById('trade-search-status');
-  if(q.length<2){status.textContent='Type at least 2 characters.';return;}
+  if(q.length<2){status.textContent=q?'Type at least 2 characters.':'';return;}
   status.textContent='Searching Yahoo Finance…';
   tradeSearchTimer=setTimeout(async()=>{
     try{
@@ -2011,25 +2188,33 @@ function searchTradeStocks(){
       if(!result.success)throw new Error(result.error);
       const list=document.getElementById('t-stock-options');list.replaceChildren();tradeStockTickerByLabel.clear();tradeYahooByLabel.clear();
       for(const stock of result.data){
-        const label=stock.name+' — '+stock.symbol,option=document.createElement('option');option.value=label;list.appendChild(option);
+        const label=stock.name+' — '+stock.symbol,option=document.createElement('div');
+        option.textContent=label;option.className='stock-suggestion';option.id='trade-stock-option-'+list.children.length;
+        option.setAttribute('role','option');option.setAttribute('aria-selected','false');
+        option.addEventListener('mousedown',event=>event.preventDefault());
+        option.addEventListener('click',()=>{document.getElementById('t-stock-name').value=label;populateTickerFromStock();closeTradeStockSuggestions();});list.appendChild(option);
         tradeStockTickerByLabel.set(label,(stock.symbol.endsWith('.NS')?'NSE:':'BSE:')+stock.symbol.slice(0,-3));tradeYahooByLabel.set(label,stock.symbol);
       }
-      status.textContent=result.data.length?'Select a stock, then review or edit its ticker before logging.':'No stocks found. Try an exact .NS or .BO symbol.';
+      document.getElementById('t-stock-name').setAttribute('aria-expanded',String(result.data.length>0));
+      status.textContent=result.data.length?'':'No stocks found. Try an exact .NS or .BO symbol.';
     }catch(error){if(version===tradeSearchVersion)status.textContent=error.message;}
   },350);
 }
 async function addTrade(){
+  populateTickerFromStock();
   const ticker=document.getElementById('t-ticker').value.trim().toUpperCase();
+  if(!ticker) return alert('Select a stock from the search results.');
   const type=document.getElementById('t-type').value;
   const shares=parseFloat(document.getElementById('t-shares').value);
   const price=parseFloat(document.getElementById('t-price').value);
   const notes=document.getElementById('t-notes').value.trim();
   const date=document.getElementById('t-date').value;
-  if(!ticker || !Number.isFinite(shares) || shares <= 0 || !Number.isFinite(price) || price < 0 || (type === 'SELL' && price === 0)) return alert('Enter a ticker, positive shares and a valid price. Zero price is allowed for bonus BUY trades.');
+  if(!Number.isFinite(shares) || shares <= 0 || !Number.isFinite(price) || price < 0 || (type === 'SELL' && price === 0)) return alert('Enter positive shares and a valid price. Zero price is allowed for bonus BUY trades.');
   const yahoo_finance_code=document.getElementById('t-yahoo-code').value.trim().toUpperCase();
   const j=await api('/api/trades',{method:'POST',body:JSON.stringify({ticker,yahoo_finance_code,type,shares,price,notes,traded_at:date?date+'T12:00:00':undefined})});
   if(!j.success) return alert('Error: '+j.error);
   ['t-stock-name','t-ticker','t-yahoo-code','t-shares','t-price','t-notes'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('trade-search-status').textContent='';
   loadTrades();
 }
 async function loadTrades(){
@@ -2044,14 +2229,14 @@ async function loadTrades(){
   window.displayedTrades=j.data||[];
   if(!j.data.length){document.getElementById('trades-table').innerHTML='<div class="no-trigger-box">No trades yet. Import from Excel above or log manually.</div>';return;}
   const rows=j.data.map(t=>`<div class="trades-row ${t.notes?.includes('Imported')?'imported':''}">
-    <div style="font-weight:600">${t.ticker}<br><span style="font-size:10px;color:rgba(255,255,255,.25)">${t.notes||''}</span></div>
+    <div style="font-weight:600;overflow-wrap:anywhere">${escapeHtml(t.stock_name||t.ticker)}${t.stock_name?`<br><span style="font-size:11px;color:rgba(255,255,255,.5)">${escapeHtml(t.ticker)}</span>`:''}<br><span style="font-size:10px;color:rgba(255,255,255,.25)">${escapeHtml(t.notes||'')}</span></div>
     <div class="${t.type==='BUY'?'type-buy':'type-sell'}">${t.type}</div>
     <div>${t.shares}</div><div>${fmtD(t.price)}</div>
     <div style="font-weight:600">${fmt(t.amount)}</div>
     <div style="font-size:11px;color:rgba(255,255,255,.4)">${t.traded_at?.substring(0,10)||'—'}</div>
-    <div><button class="del-btn" onclick="deleteTrade(${t.id})">?</button></div>
+    <div><button type="button" class="del-btn" aria-label="Delete trade for ${escapeHtml(t.stock_name||t.ticker)}" title="Delete trade" onclick="deleteTrade(${t.id})"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6"/></svg></button></div>
   </div>`).join('');
-  document.getElementById('trades-table').innerHTML=`<div class="trades-table-wrap"><div class="trades-head"><div>Ticker</div><div>Type</div><div>Shares</div><div>Price</div><div>Amount</div><div>Date</div><div></div></div>${rows}</div>`;
+  document.getElementById('trades-table').innerHTML=`<div class="trades-table-wrap"><div class="trades-head"><div>Stock / Ticker</div><div>Type</div><div>Shares</div><div>Price</div><div>Amount</div><div>Date</div><div></div></div>${rows}</div>`;
 }
 function openTradeExport(){
   document.getElementById('trade-export-error').textContent='';
@@ -2081,8 +2266,8 @@ function downloadTradesCsv(trades,start,end){
     const parts=String(value||'').slice(0,10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
     return parts && months[Number(parts[2])-1] ? `${parts[3]}-${months[Number(parts[2])-1]}-${parts[1]}` : '';
   };
-  const columns=[['Date','Scrip','Scrip Name','Action','Quantity','Buy / Sell @','Value','Brkg','Commentry'],...trades.map(t=>[
-    csvDate(t.traded_at),t.stock_code||t.ticker||'',t.stock_name||'',t.type||'',t.shares??'',t.price??'',t.amount??'','',t.notes||''
+  const columns=[['Date','Scrip','Action','Quantity','Buy / Sell @','Value','Brkg','Commentry','Scrip Name'],...trades.map(t=>[
+    csvDate(t.traded_at),t.stock_code||t.ticker||'',t.type||'',t.shares??'',t.price??'',t.amount??'','',t.notes||'',t.stock_name||''
   ])];
   const csv=columns.map(row=>row.map(value=>'"'+String(value).replace(/"/g,'""')+'"').join(',')).join('\r\n');
   const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
@@ -2126,7 +2311,41 @@ async function saveStockBudget(reset){
  try{const result=await api('/api/sip-stock-budgets/'+encodeURIComponent(ticker),{method:'PUT',body:JSON.stringify({max_budget:reset?null:Number(document.getElementById('stock-budget-amount').value)})});if(!result.success)throw new Error(result.error);await loadStockBudgets();document.getElementById('stock-budget-select').value=ticker;showStockBudget();message.textContent=reset?'Default budget restored.':'Stock budget saved.';}
  catch(e){message.textContent=e.message;}finally{form.querySelectorAll('button').forEach(b=>b.disabled=false);}
 }
+function switchSettingsView(view){
+ for(const name of ['strategy','override']){const active=name===view;document.getElementById('settings-'+name).hidden=!active;const tab=document.getElementById('settings-tab-'+name);tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1;}
+}
+function onSettingsTabKey(event,view){
+ if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+ event.preventDefault();const next=event.key==='Home'?'strategy':event.key==='End'?'override':view==='strategy'?'override':'strategy';switchSettingsView(next);document.getElementById('settings-tab-'+next).focus();
+}
+async function loadGrowthTarget(){
+ const button=document.getElementById('save-growth-target'),message=document.getElementById('growth-target-message');button.disabled=true;message.textContent='Loading target…';
+ try{const result=await api('/api/growth-target');if(!result.success)throw Error(result.error);document.getElementById('set-target-growth').value=result.data.target_growth_pct??30;message.textContent='';}
+ catch(error){message.textContent=error.message||'Unable to load target growth.';}
+ finally{button.disabled=false;}
+}
+async function saveGrowthTarget(){
+ const form=document.getElementById('growth-target-form');if(!form.reportValidity())return;
+ const button=document.getElementById('save-growth-target'),message=document.getElementById('growth-target-message');button.disabled=true;
+ try{const result=await api('/api/growth-target',{method:'PUT',body:JSON.stringify({target_growth_pct:Number(document.getElementById('set-target-growth').value)})});if(!result.success)throw Error(result.error);message.textContent='Target growth saved. Rebalance Losers will use '+result.data.target_growth_pct+'%.';}
+ catch(error){message.textContent=error.message||'Unable to save target growth.';}
+ finally{button.disabled=false;}
+}
+async function loadAthAge(){
+ const button=document.getElementById('save-ath-age'),message=document.getElementById('ath-age-message');button.disabled=true;message.textContent='Loading ATH age…';
+ try{const result=await api('/api/ath-age');if(!result.success)throw Error(result.error);document.getElementById('set-ath-age').value=result.data.ath_age_days??365;message.textContent='';}
+ catch(error){message.textContent=error.message||'Unable to load ATH age.';}
+ finally{button.disabled=false;}
+}
+async function saveAthAge(){
+ const form=document.getElementById('ath-age-form');if(!form.reportValidity())return;
+ const button=document.getElementById('save-ath-age'),message=document.getElementById('ath-age-message');button.disabled=true;
+ try{const result=await api('/api/ath-age',{method:'PUT',body:JSON.stringify({ath_age_days:Number(document.getElementById('set-ath-age').value)})});if(!result.success)throw Error(result.error);message.textContent='ATH age saved. Current rebalance will use more than '+result.data.ath_age_days+' days.';}
+ catch(error){message.textContent=error.message||'Unable to save ATH age.';}
+ finally{button.disabled=false;}
+}
 async function loadSettings(){
+  switchSettingsView('strategy');loadGrowthTarget();loadAthAge();
   const j=await api('/api/sip-config'); if(!j.success) return;
   sipLevels=j.data.levels;
   document.getElementById('set-budget').value=j.data.max_budget;

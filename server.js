@@ -1,7 +1,16 @@
+const athAgeSetting=require('./ath-age-settings');
+const growthTarget=require('./growth-target');
+const portfolioHistory=require('./portfolio-history');
 const userActivity=require('./user-activity');
+const passwordReset=require('./password-reset');
+const quarterlyResults=require('./quarterly-results');
+const corporateActions=require('./corporate-actions');
+const taxHarvestingRoutes=require('./tax-harvesting-routes');
 const rebalancing=require('./rebalancing');
 const {UNAVAILABLE,accountAccessMessage,migrateUserAccess,createUserAuth,changeUserAccess}=require('./user-access');
 const {xirrEligible}=require('./xirr-eligibility');
+const {applyOpportunityBeta}=require('./opportunity-beta');
+const betaCycleStore=require('./opportunity-beta-cycles');
 const {validateNewStock,addUniverseStock,deleteUniverseStock}=require('./admin-universe');
 const express  = require("express");
 const cors     = require("cors");
@@ -59,8 +68,16 @@ const upload     = multer({ storage: multer.memoryStorage(), limits: { fileSize:
 app.use(cors());
 app.use(express.json({ limit: "5mb" }));
 // Explicit reads let the serverless bundler include these shared UI assets.
+const historyUi=fs.readFileSync(path.join(__dirname,'portfolio-history-ui.js'),'utf8');
+const historyCss=fs.readFileSync(path.join(__dirname,'portfolio-history.css'),'utf8');
+app.get('/portfolio-history-ui.js',(req,res)=>res.type('js').send(historyUi));
+app.get('/portfolio-history.css',(req,res)=>res.type('css').send(historyCss));
 const responsiveCss = fs.readFileSync(path.join(__dirname, "responsive.css"), "utf8");
 const responsiveJs = fs.readFileSync(path.join(__dirname, "responsive.js"), "utf8");
+const resultsJs=fs.readFileSync(path.join(__dirname,'quarterly-results-ui.js'),'utf8');
+const resultsCss=fs.readFileSync(path.join(__dirname,'quarterly-results.css'),'utf8');
+app.get('/quarterly-results-ui.js',(req,res)=>res.set('Cache-Control','no-cache').type('js').send(resultsJs));
+app.get('/quarterly-results.css',(req,res)=>res.set('Cache-Control','no-cache').type('css').send(resultsCss));
 // Serve the self-contained validator from the loaded module: bundlers may inline
 // required JS modules rather than retain their original source files on disk.
 const sipValidationJs = `globalThis.validateSIPConfig = ${validateSIPConfig.toString()};`;
@@ -74,6 +91,23 @@ const userActivityJs=fs.readFileSync(path.join(__dirname,'user-activity-client.j
 app.get('/user-activity-client.js',(req,res)=>res.set('Cache-Control','no-cache').type('js').send(userActivityJs));
 const adminActivityJs=fs.readFileSync(path.join(__dirname,'admin-activity.js'),'utf8');
 app.get('/admin-activity.js',(req,res)=>res.set('Cache-Control','no-cache').type('js').send(adminActivityJs));
+const adminPriceRefreshJs=fs.readFileSync(path.join(__dirname,'admin-price-refresh.js'),'utf8');
+app.get('/admin-price-refresh.js',(req,res)=>res.set('Cache-Control','no-cache').type('js').send(adminPriceRefreshJs));
+const taxHarvestingUi=fs.readFileSync(path.join(__dirname,'tax-harvesting-ui.js'),'utf8');
+const taxHarvestingCss=fs.readFileSync(path.join(__dirname,'tax-harvesting.css'),'utf8');
+const taxAdminUi=fs.readFileSync(path.join(__dirname,'tax-admin-ui.js'),'utf8');
+app.get('/tax-harvesting-ui.js',(req,res)=>res.type('js').send(taxHarvestingUi));
+app.get('/tax-harvesting.css',(req,res)=>res.type('css').send(taxHarvestingCss));
+app.get('/tax-admin-ui.js',(req,res)=>res.type('js').send(taxAdminUi));
+// Literal paths let Vercel's file tracer include these runtime assets.
+const corporateActionAssets={
+ 'corporate-actions-ui.js':fs.readFileSync(path.join(__dirname,'corporate-actions-ui.js'),'utf8'),
+ 'corporate-actions-admin.js':fs.readFileSync(path.join(__dirname,'corporate-actions-admin.js'),'utf8'),
+ 'corporate-actions.css':fs.readFileSync(path.join(__dirname,'corporate-actions.css'),'utf8'),
+};
+for(const [asset,body] of Object.entries(corporateActionAssets)){
+ app.get('/'+asset,(req,res)=>res.set('Cache-Control','no-cache').type(asset.endsWith('.css')?'css':'js').send(body));
+}
 app.use(express.static(path.join(__dirname)));
 app.get("/", async (req, res) => {
   try {
@@ -194,7 +228,14 @@ const db = {
 // ─────────────────────────────────────────
 dbReady = (async () => {
   const statements = [
+    portfolioHistory.schema,
+    quarterlyResults.schema,
+    ...corporateActions.schema,
+    ...passwordReset.schema,
+    ...taxHarvestingRoutes.schema,
     rebalancing.schema,
+    growthTarget.schema,
+    athAgeSetting.schema,
     ...userActivity.schema,
     `CREATE TABLE IF NOT EXISTS users (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -254,10 +295,16 @@ dbReady = (async () => {
   await execRaw('CREATE TABLE IF NOT EXISTS stock_sip_budgets(user_id INTEGER NOT NULL,ticker TEXT NOT NULL,max_budget REAL NOT NULL CHECK(max_budget>0),PRIMARY KEY(user_id,ticker))');
   await migrateUserAccess(sql=>remoteDb.execute(sql));
   await execRaw(universeConfigSchema);
+  await execRaw(betaCycleStore.schema);
+  await execRaw(betaCycleStore.indexSchema);
   await execRaw(yahooCodeSchema);
   await execRaw(yahooCacheSchema);
   for(const statement of sharedSchema)await execRaw(statement);
   const tradeColumns = await allRaw("PRAGMA table_info(trade_history)");
+  const historyColumns = await allRaw('PRAGMA table_info(portfolio_daily_history)');
+  for (const column of ['day_change', 'day_change_pct']) {
+    if (!historyColumns.some(c => c.name === column)) await execRaw(`ALTER TABLE portfolio_daily_history ADD COLUMN ${column} REAL`);
+  }
   const portfolioColumns = await allRaw('PRAGMA table_info(portfolio)');
   for (const column of ['stock_name', 'ok_code', 'yahoo_finance_code']) {
     if (!tradeColumns.some(c => c.name === column)) await execRaw(`ALTER TABLE trade_history ADD COLUMN ${column} TEXT NOT NULL DEFAULT ''`);
@@ -314,6 +361,34 @@ dbReady = (async () => {
 // AUTH
 // ─────────────────────────────────────────
 const auth=createUserAuth({db,jwt,secret:JWT_SECRET});
+const growthTargets=growthTarget.createGrowthTargets(db);
+growthTargets.register(app,auth);
+const athAgeSettings=athAgeSetting.createAthAgeSettings(db);
+athAgeSettings.register(app,auth);
+const resultsService=quarterlyResults.createQuarterlyResults({yf:yahooClient,db});
+app.get('/api/results/search',auth,async(req,res)=>{
+ try{res.set('Cache-Control','no-store').json({success:true,data:await resultsService.search(req.query.q)});}
+ catch(e){res.status(e.status||500).json({success:false,error:e.message});}
+});
+app.get('/api/results/portfolio',auth,async(req,res)=>{
+ try{
+  const [holdings,stocks]=await Promise.all([db.prepare('SELECT * FROM portfolio WHERE user_id=? AND shares>0').all(req.user.id),namedWatchlists.universe()]);
+  const seen=new Set(),rows=[];
+  for(const h of holdings){
+   const master=matchPriceStock(h,stocks);
+   let ticker=String(h.yahoo_finance_code||master?.yahoo_finance_code||'').trim().toUpperCase();
+   if(!ticker&&/\.(NS|BO)$/.test(h.ticker))ticker=h.ticker;
+   if(!ticker){const code=String(master?.stock_code||h.ticker);if(/^NSE:/i.test(code))ticker=code.slice(4)+'.NS';else if(/^(BSE|BOM):/i.test(code))ticker=code.slice(4)+'.BO';}
+   const identity=ticker||h.ticker;if(seen.has(identity))continue;seen.add(identity);
+   rows.push({ticker:quarterlyResults.validTicker(ticker)?ticker:null,holding_ticker:h.ticker,name:master?.name||h.stock_name||h.ticker});
+  }
+  res.set('Cache-Control','no-store').json({success:true,data:rows});
+ }catch{res.status(503).json({success:false,error:'Unable to load portfolio stocks. Please retry.'});}
+});
+app.get('/api/stock/:ticker/quarterly',auth,async(req,res)=>{
+ try{res.set('Cache-Control','no-store').json({success:true,data:await resultsService.get(req.params.ticker.toUpperCase())});}
+ catch(e){res.status(e.status||500).json({success:false,error:e.message});}
+});
 
 function adminAuth(req, res, next) {
   const token = (req.headers.authorization || "").replace("Bearer ", "");
@@ -527,6 +602,21 @@ function deriveExchangeFromTicker(ticker) {
 }
 
 const yahooPrices=createYahooPrices({db,yf:yahooClient});
+const betaCycles=betaCycleStore.createBetaCycles({db,transaction:transactionRaw});
+async function syncBetaCyclesForQuote(stock,quote){
+  if(!Number.isFinite(quote.ath)||quote.ath<=0||quote.stale||quote.quote_error)return;
+  const tracked=await db.prepare('SELECT user_id FROM opportunity_beta_cycles WHERE ticker=? AND closed_at IS NULL AND ath<?').all(stock.ticker,quote.ath);
+  for(const {user_id:uid} of tracked){
+    const cfg=await getOrSeedSIP(uid);
+    const owned=(await db.prepare('SELECT * FROM portfolio WHERE user_id=? AND shares>0').all(uid)).filter(h=>matchStock(h,[stock]));
+    const overrides=await db.prepare('SELECT ticker,max_budget FROM stock_sip_budgets WHERE user_id=?').all(uid);
+    const budget=Number(overrides.find(h=>matchStock(h,[stock]))?.max_budget??cfg.max_budget);
+    const aliases=[...new Set([stock.ticker,stock.stock_code,stock.yahoo_finance_code,...owned.map(h=>h.ticker)].filter(Boolean))];
+    const trades=await db.prepare(`SELECT ticker,type,shares,price,traded_at FROM trade_history WHERE user_id=? AND (ticker IN (${aliases.map(()=>'?').join(',')}) OR (yahoo_finance_code<>'' AND yahoo_finance_code=?)) ORDER BY traded_at ASC,id ASC`).all(uid,...aliases,stock.yahoo_finance_code||'');
+    const fallback=owned.reduce((sum,h)=>sum+(h.avg_price==null?NaN:Number(h.shares)*Number(h.avg_price)),0);
+    await betaCycles.observe({userId:uid,ticker:stock.ticker,ath:quote.ath,athDate:quote.ath_date,budget,levels:JSON.parse(cfg.levels),trades,price:quote.price,fallback});
+  }
+}
 function matchPriceStock(holding,stocks){
   return matchStock(holding,stocks)||matchStock({...holding,ticker:normalizeTickerValue(holding.ticker)},stocks);
 }
@@ -538,27 +628,46 @@ async function universeStock(ticker){
 }
 async function fetchPrice(ticker){return yahooPrices.readStock(await universeStock(ticker));}
 async function fetchPriceFromWatchlistTable(ticker){return fetchPrice(ticker);}
-async function refreshYahooUniverse(){
+async function refreshYahooUniverse({force=false,after=''}={}){
   const systemId=await getOnepieceSystemUserId();
-  const stocks=await db.prepare('SELECT ticker,stock_code,yahoo_finance_code,code,name FROM watchlist WHERE user_id=?').all(systemId);
+  const stocks=force
+    ?await db.prepare('SELECT ticker,stock_code,yahoo_finance_code,code,name FROM watchlist WHERE user_id=? AND ticker>? ORDER BY ticker LIMIT 12').all(systemId,after)
+    :await db.prepare('SELECT ticker,stock_code,yahoo_finance_code,code,name FROM watchlist WHERE user_id=?').all(systemId);
+  const errors=[];
   let index=0,successful=0,failed=0;const deadline=Date.now()+75000;
   await Promise.all(Array.from({length:Math.min(6,stocks.length)},async()=>{
     while(index<stocks.length){
       const stock=stocks[index++];let data;
       try{
-        if(Date.now()>deadline)throw new Error('Refresh time limit reached; retry to load this stock');
-        data=await yahooPrices.fetchStock(stock);successful++;
-      }catch(error){failed++;data={price:null,change:null,ath:null,ath_date:null,price_as_of:null,quote_fetched_at:null,quote_error:error.message};}
-      await db.prepare('UPDATE watchlist SET cmp=?,change=?,ath=?,ath_date=?,price_as_of=?,quote_fetched_at=?,quote_error=?,source=? WHERE user_id=? AND ticker=? AND yahoo_finance_code=?').run(data.price,data.change,data.ath,data.ath_date,data.price_as_of,data.quote_fetched_at,data.quote_error||null,'YAHOO_FINANCE',systemId,stock.ticker,stock.yahoo_finance_code);
+        if(Date.now()>deadline){failed++;errors.push({ticker:stock.ticker,error:'Refresh time limit reached; retry this stock.'});continue;}
+        data=await yahooPrices.fetchStock(stock,{force});
+        if(data.stale)throw new Error(data.quote_error||'Provider returned saved data instead of a fresh quote.');
+        await db.prepare('UPDATE watchlist SET cmp=?,pe=?,change=?,ath=?,ath_date=?,price_as_of=?,quote_fetched_at=?,quote_error=?,source=? WHERE user_id=? AND ticker=? AND yahoo_finance_code=?').run(data.price,data.pe??null,data.change,data.ath,data.ath_date,data.price_as_of,data.quote_fetched_at,data.quote_error||null,'YAHOO_FINANCE',systemId,stock.ticker,stock.yahoo_finance_code);
+        await syncBetaCyclesForQuote(stock,data);
+        successful++;
+      }catch(error){
+        failed++;errors.push({ticker:stock.ticker,error:error.message});
+        await db.prepare('UPDATE watchlist SET quote_error=? WHERE user_id=? AND ticker=?').run(error.message,systemId,stock.ticker).catch(()=>{});
+        continue;
+      }
     }
   }));
-  return {total:stocks.length,successful,failed};
+  return {total:stocks.length,successful,failed,errors,...(force?{next:stocks.length===12?stocks.at(-1).ticker:null}:{})};
 }
 const coordinatedPriceRefresh=createSharedPriceRefresh({db,transactionRaw,refresh:refreshYahooUniverse});
 async function refreshPricesForSession(){
   await dbReady;
-  try{return await coordinatedPriceRefresh();}
-  catch(error){return {error:error.message};}
+  let summary;
+  try{summary=await coordinatedPriceRefresh();}
+  catch(error){summary={error:error.message};}
+  // Read saved quote times even when the market is closed or refresh failed.
+  let lastPriceUpdatedAt=null;
+  try{
+    const row=await db.prepare('SELECT MAX(quote_fetched_at) AS last_price_updated_at FROM watchlist WHERE user_id=? AND cmp>0').get(await getOnepieceSystemUserId());
+    const timestamp=Date.parse(row?.last_price_updated_at);
+    if(Number.isFinite(timestamp))lastPriceUpdatedAt=new Date(timestamp).toISOString();
+  }catch{}
+  return {...summary,last_price_updated_at:lastPriceUpdatedAt};
 }
 
 // ─────────────────────────────────────────
@@ -690,6 +799,7 @@ function parseExcelTrades(buffer, filename) {
 // ─────────────────────────────────────────
 // ROUTES — AUTH
 // ─────────────────────────────────────────
+passwordReset.register(app,{secret:JWT_SECRET,systemEmail:ONEPIECE_SYSTEM_EMAIL,sendEmail:passwordReset.createEmailSender(),transaction:async fn=>{await dbReady;return transactionRaw(fn);}});
 app.post("/api/auth/signup", async (req, res) => {
   const { email, password, name } = req.body;
   if (!email || !password) return res.status(400).json({ success:false, error:"email and password required" });
@@ -709,7 +819,6 @@ app.post("/api/auth/login", async (req, res) => {
     return res.status(401).json({ success:false, error:"Invalid email or password" });
   if(user.account_status!=='approved'||user.deleted_at)return res.status(403).json({success:false,error:accountAccessMessage(user)});
   const token = signUserToken(user);
-  await refreshPricesForSession();
   res.json({ success:true, token, user:{ id:user.id, email:user.email, name:user.name } });
 });
 
@@ -720,7 +829,6 @@ app.post("/api/auth/admin-login", async (req, res) => {
     return res.status(401).json({ success:false, error:"Invalid admin credentials" });
   }
   const token = signAdminToken();
-  await refreshPricesForSession();
   res.json({ success:true, token, user:{ email: ADMIN_EMAIL, role: "admin", name: "OnePiece Admin" } });
 });
 
@@ -790,11 +898,28 @@ app.get("/logout", async (req, res) => {
 
 const discovery=require('./stock-discovery').createStockDiscovery({yf:yahooClient,prices:yahooPrices,systemId:getOnepieceSystemUserId});
 const namedWatchlists=createWatchlists({db,transactionRaw,systemId:getOnepieceSystemUserId,readPrices:yahooPrices.readStocks,discovery});
+corporateActions.register(app,{db,auth,adminAuth,yf:yahooClient,universe:()=>namedWatchlists.universe(),matchStock:matchPriceStock,rebuild:_rebuildPortfolioForTicker,transaction:async fn=>{await dbReady;return transactionRaw(fn);}});
+taxHarvestingRoutes.register(app,{db,auth,adminAuth,universe:()=>namedWatchlists.universe(),matchStock:matchPriceStock,transaction:async fn=>{await dbReady;return transactionRaw(fn);}});
 namedWatchlists.register(app,auth);
 app.get('/api/admin/stocks/search',adminAuth,async(req,res)=>{try{res.set('Cache-Control','no-store').json({success:true,data:await discovery.search(req.query.q)});}catch(e){res.status(e.status||500).json({success:false,error:e.message});}});
+app.post('/api/admin/prices/refresh',adminAuth,async(req,res)=>{
+  res.set('Cache-Control','no-store');
+  const after=req.body?.after;
+  if(after!==undefined&&(typeof after!=='string'||after.length>200))return res.status(400).json({success:false,error:'Invalid refresh cursor'});
+  try{
+    await dbReady;
+    const summary=await coordinatedPriceRefresh({force:true,after:after||''});
+    if(summary.refreshing)return res.status(409).json({success:false,refreshing:true,error:'Another price refresh is running. Please try again shortly.'});
+    res.json({success:true,...summary});
+  }catch(error){res.status(500).json({success:false,error:error.message||'Price refresh failed'});}
+});
 app.get('/api/admin/stock-config',adminAuth,async(req,res)=>{
   try{res.set('Cache-Control','no-store').json({success:true,data:await namedWatchlists.universe()});}
   catch(e){res.status(500).json({success:false,error:e.message});}
+});
+app.post('/api/admin/stock-config/validate-yahoo',adminAuth,async(req,res)=>{
+  try{const data=await require('./yahoo-code-validation').validateYahooCodes(yahooClient,req.body.codes);res.set('Cache-Control','no-store').json({success:true,data});}
+  catch(e){res.status(e.status||500).json({success:false,error:e.message});}
 });
 app.put('/api/admin/default-watchlist/:ticker',adminAuth,async(req,res)=>{
  try{
@@ -864,6 +989,9 @@ app.post('/api/prices/refresh',auth,async(req,res)=>{
   const summary=await refreshPricesForSession();
   res.set('Cache-Control','no-store').json({success:!summary.error,summary,error:summary.error});
 });
+const dailyPortfolioHistory=portfolioHistory.createHistory({db,transaction:async fn=>{await dbReady;return transactionRaw(fn);},universe:()=>namedWatchlists.universe(),matchStock:matchPriceStock,refresh:coordinatedPriceRefresh,systemEmail:ONEPIECE_SYSTEM_EMAIL});
+app.get('/api/portfolio-history',auth,dailyPortfolioHistory.history);
+app.get('/api/cron/portfolio-history',dailyPortfolioHistory.cron);
 app.get("/api/cron/watchlist", createWatchlistCronHandler({db,sync:coordinatedPriceRefresh}));
 
 app.post("/api/watchlist/sync", auth, async (req, res) => {
@@ -920,23 +1048,14 @@ app.get("/api/stock/:ticker/sip", auth, async (req, res) => {
     if (!(stock.ath > 0)) return res.status(422).json({ success: false, error: 'All-time high is unavailable. Update this stock from the Watchlist first.' });
     const cfg     = await getOrSeedSIP(req.user.id);
     const levels  = JSON.parse(cfg.levels);
-    const overrides = await db.prepare('SELECT ticker,max_budget FROM stock_sip_budgets WHERE user_id=?').all(req.user.id);
-    const override = overrides.find(o=>o.ticker===ticker || (master && matchStock(o,universe)?.ticker===master.ticker));
-    const budget  = override?.max_budget ?? cfg.max_budget;
-    const trades = await db.prepare("SELECT ticker,yahoo_finance_code,price,shares FROM trade_history WHERE user_id=? AND type='BUY'").all(req.user.id);
-    const buys = trades.filter(t=>t.ticker===ticker || (master && matchStock(t,universe)?.ticker===master.ticker));
-    let spent = buys.reduce((sum,t)=>sum+Number(t.price)*Number(t.shares),0);
+    const budget  = cfg.max_budget;
     const fallPct = ((stock.price - stock.ath) / stock.ath) * 100;
-    const analysis = levels.map(l => {
-      const allocated = (l.allocation/100)*budget;
-      const amount = Math.max(0,allocated-spent);
-      spent = Math.max(0,spent-allocated);
-      return {
-        ...l, amount,
-        triggerPrice: Math.round(stock.ath*(1+l.fall/100)),
-        triggered: stock.price > 0 && stock.price <= stock.ath*(100+Number(l.fall))/100,
-      };
-    });
+    const analysis = levels.map(l => ({
+      ...l,
+      amount:       Math.round((l.allocation/100)*budget),
+      triggerPrice: Math.round(stock.ath*(1+l.fall/100)),
+      triggered:    fallPct <= l.fall,
+    }));
     const triggered       = analysis.filter(a => a.triggered);
     const totalDeployable = triggered.reduce((s, a) => s + a.amount, 0);
     res.json({ success:true, data:{ stock, fallPct:+fallPct.toFixed(2), budget, analysis, triggered, totalDeployable } });
@@ -952,17 +1071,15 @@ app.get("/api/portfolio", auth, async (req, res) => {
   const uid      = req.user.id;
   const holdings = await db.prepare("SELECT * FROM portfolio WHERE user_id=? ORDER BY added_at DESC").all(uid);
 
-  // Attach trade count and XIRR inputs (no live price needed for this)
-  const withTrades = [];
-  for (const h of holdings) {
-    const trades = await db.prepare(
-      "SELECT * FROM trade_history WHERE user_id=? AND ticker=? ORDER BY traded_at ASC"
-    ).all(uid, h.ticker);
-    withTrades.push({ ...h, tradeCount: trades.length, trades });
-  }
-
-  const portfolioTrades=await db.prepare('SELECT type,traded_at FROM trade_history WHERE user_id=? ORDER BY traded_at,id').all(uid);
-  res.json({ success:true, data:{ holdings: withTrades, xirr_eligible:xirrEligible(portfolioTrades,true) } });
+  // Use the shared current-holdings XIRR calculation for portfolio and leaderboard.
+  const portfolioTrades=await db.prepare('SELECT * FROM trade_history WHERE user_id=? ORDER BY traded_at,id').all(uid);
+  const withTrades=holdings.map(h=>{
+    const trades=portfolioTrades.filter(t=>t.ticker===h.ticker);
+    return {...h,tradeCount:trades.length,trades};
+  });
+  const now=new Date();
+  const performance=leaderboard([{id:uid}],holdings,portfolioTrades,await namedWatchlists.universe(),xirr,matchPriceStock,now)[0];
+  res.set('Cache-Control','no-store').json({ success:true, data:{ holdings: withTrades, xirr_eligible:xirrEligible(portfolioTrades,true,now), xirr_pct:performance.xirr_pct, xirr_status:performance.status } });
 });
 
 // GET /api/portfolio/:ticker/xirr
@@ -1004,36 +1121,25 @@ app.get('/api/admin/activity',adminAuth,async(req,res)=>{
 });
 
 async function rebalanceContext(uid,ticker){
- const [holdings,stocks,cfg]=await Promise.all([
-  db.prepare('SELECT * FROM portfolio WHERE user_id=? AND shares>0').all(uid),namedWatchlists.universe(),getOrSeedSIP(uid)
+ const [holdings,stocks,trades,targetGrowth,athAgeDays]=await Promise.all([
+  db.prepare('SELECT * FROM portfolio WHERE user_id=? AND shares>0').all(uid),namedWatchlists.universe(),
+  db.prepare('SELECT * FROM trade_history WHERE user_id=? ORDER BY traded_at,id').all(uid),growthTargets.get(uid),athAgeSettings.get(uid)
  ]);
  const allowed=new Set(stocks.filter(s=>Number(s.in_default_watchlist)!==0).map(s=>s.ticker));
  const members=await db.prepare('SELECT i.ticker FROM user_watchlist_items i JOIN user_watchlists l ON l.id=i.watchlist_id WHERE l.user_id=?').all(uid);
  members.forEach(s=>allowed.add(s.ticker));
  holdings.forEach(h=>{const s=matchPriceStock(h,stocks);if(s)allowed.add(s.ticker);});
- const sources=rebalancing.sourceRows(holdings,stocks,matchPriceStock);
+ const tradesByTicker=new Map();
+ for(const trade of trades){if(!tradesByTicker.has(trade.ticker))tradesByTicker.set(trade.ticker,[]);tradesByTicker.get(trade.ticker).push(trade);}
+ const measured=holdings.map(h=>({...h,xirr_pct:computeXIRR(tradesByTicker.get(h.ticker)||[],matchPriceStock(h,stocks)?.price)}));
+ const sources=rebalancing.sourceRows(measured,stocks,matchPriceStock,undefined,targetGrowth,athAgeDays);
  const source=sources.find(s=>s.ticker===ticker);
- const levels=JSON.parse(cfg.levels);
- let candidates=source?rebalancing.candidates(stocks,holdings,levels,allowed,source,matchPriceStock):[];
- if(source){
-  const [trades,overrides]=await Promise.all([
-   db.prepare("SELECT ticker,yahoo_finance_code,price,shares FROM trade_history WHERE user_id=? AND type='BUY'").all(uid),
-   db.prepare('SELECT ticker,max_budget FROM stock_sip_budgets WHERE user_id=?').all(uid)
-  ]);
-  candidates=candidates.map(candidate=>{
-   const identity=matchPriceStock(candidate,stocks)?.ticker || candidate.ticker;
-   const override=overrides.find(o=>o.ticker===candidate.ticker || matchPriceStock(o,stocks)?.ticker===identity);
-   const budget=Number(override?.max_budget ?? cfg.max_budget);
-   const allocation=levels.filter(l=>Number(l.fall)>=candidate.fall).reduce((sum,l)=>sum+Number(l.allocation),0);
-   const invested=trades.filter(t=>t.ticker===candidate.ticker || matchPriceStock(t,stocks)?.ticker===identity).reduce((sum,t)=>sum+Number(t.price)*Number(t.shares),0);
-   const amount=Math.max(0,budget*allocation/100-invested);
-   return {...candidate,allocation:budget>0?amount/budget*100:0,suggested_amount:amount,shares_to_buy:Math.floor(amount/candidate.price)};
-  }).filter(candidate=>candidate.shares_to_buy>0);
- }
- return {sources,source,candidates};
+ const beta=source?await loadOpportunityData(uid,{mode:'beta'},stocks.filter(s=>allowed.has(s.ticker))):null;
+ const candidates=source?rebalancing.betaCandidates(beta.rows,stocks,holdings,source,matchPriceStock):[];
+ return {sources,source,candidates,targetGrowth,athAgeDays};
 }
 app.get('/api/rebalancing',auth,async(req,res)=>{
- try{const context=await rebalanceContext(req.user.id,req.query.ticker);res.set('Cache-Control','no-store').json({success:true,data:{sources:context.sources,source:context.source||null,candidates:context.candidates,combinations:context.source?rebalancing.combinations(context.candidates,context.source.market_value):[],date:rebalancing.indiaDate()}});}
+ try{const context=await rebalanceContext(req.user.id,req.query.ticker);res.set('Cache-Control','no-store').json({success:true,data:{target_growth_pct:context.targetGrowth,ath_age_days:context.athAgeDays,sources:context.sources,source:context.source||null,candidates:context.candidates,opportunities:rebalancing.opportunityGroups(context.candidates,context.source?.market_value),combinations:context.source?rebalancing.combinations(context.candidates,context.source.market_value):[],date:rebalancing.indiaDate()}});}
  catch(e){res.status(e.status||500).json({success:false,error:e.message});}
 });
 app.post('/api/rebalancing',auth,async(req,res)=>{
@@ -1046,25 +1152,27 @@ app.post('/api/rebalancing',auth,async(req,res)=>{
 
 app.get('/api/portfolio-opportunities', auth, async (req, res) => {
   try {
-    res.set('Cache-Control', 'no-store');
-    // Page navigation reads the shared cache; session refresh owns all provider calls.
-    const uid = req.user.id;
-    const scope = req.query.scope === 'watchlist' ? 'watchlist' : 'portfolio';
+    res.set('Cache-Control','no-store').json({success:true,data:await loadOpportunityData(req.user.id,req.query)});
+  } catch (err) { res.status(500).json({success:false,error:err.message}); }
+});
+async function loadOpportunityData(uid,query,rebalanceHoldings=null){
+    // Page navigation reads the shared cache; scheduled/background refreshes own provider calls.
+    const scope = query.scope === 'watchlist' ? 'watchlist' : 'portfolio';
     const cfg = await getOrSeedSIP(uid);
     const levels = JSON.parse(cfg.levels);
     const watchlistStocks = await db.prepare('SELECT ticker,stock_code,yahoo_finance_code,code,name FROM watchlist WHERE user_id=? ORDER BY ticker').all(await getOnepieceSystemUserId());
     const owned = await db.prepare('SELECT * FROM portfolio WHERE user_id=? AND shares>0 ORDER BY ticker').all(uid);
     const ownedTickers = new Set(owned.map(h => matchStock(h,watchlistStocks)?.ticker || h.ticker));
-    const holdings = scope === 'watchlist'
-      ? (await namedWatchlists.stocks(uid,req.query.watchlist_id)).map(stock => ({ ...stock, ok_code: stock.code || '' }))
-      : owned;
+    const holdings = rebalanceHoldings || (scope === 'watchlist'
+      ? (await namedWatchlists.stocks(uid,query.watchlist_id)).map(stock => ({ ...stock, ok_code: stock.code || '' }))
+      : owned);
     const overrides=await db.prepare('SELECT ticker,max_budget FROM stock_sip_budgets WHERE user_id=?').all(uid);
     const budgetByTicker=new Map(overrides.map(o=>[matchStock(o,watchlistStocks)?.ticker||o.ticker,Number(o.max_budget)]));
     const rows = [];
     const seen = new Set();
     for (const holding of holdings) {
       const master=matchStock(holding,watchlistStocks);
-      if(scope === 'watchlist' && ownedTickers.has(master?.ticker || holding.ticker))continue;
+      if(!rebalanceHoldings && scope === 'watchlist' && ownedTickers.has(master?.ticker || holding.ticker))continue;
       const identity=master?.ticker || holding.ticker;
       if(seen.has(identity))continue;
       seen.add(identity);
@@ -1072,23 +1180,22 @@ app.get('/api/portfolio-opportunities', auth, async (req, res) => {
       const stockCode=String(master?.stock_code ?? holding.stock_code ?? '').trim();
       if(!stockCode)continue;
       const stockBudget=budgetByTicker.get(identity)??budgetByTicker.get(holding.ticker)??Number(cfg.max_budget);
-      const aliases=[...new Set([holding.ticker,master?.ticker,master?.stock_code,master?.yahoo_finance_code].filter(Boolean))];
-      const trades = await db.prepare(`SELECT type,shares,price FROM trade_history WHERE user_id=? AND (ticker IN (${aliases.map(()=>'?').join(',')}) OR (yahoo_finance_code<>'' AND yahoo_finance_code=?)) ORDER BY traded_at ASC,id ASC`).all(uid,...aliases,master?.yahoo_finance_code || holding.yahoo_finance_code || '');
+      const aliases=[...new Set([holding.ticker,master?.ticker,master?.stock_code,master?.yahoo_finance_code,...owned.filter(h=>(matchStock(h,watchlistStocks)?.ticker||h.ticker)===identity).map(h=>h.ticker)].filter(Boolean))];
+      const trades = await db.prepare(`SELECT ticker,type,shares,price,traded_at FROM trade_history WHERE user_id=? AND (ticker IN (${aliases.map(()=>'?').join(',')}) OR (yahoo_finance_code<>'' AND yahoo_finance_code=?)) ORDER BY traded_at ASC,id ASC`).all(uid,...aliases,master?.yahoo_finance_code || holding.yahoo_finance_code || '');
       let quote;
       try{quote=await fetchPriceFromWatchlistTable(master?.ticker || holding.ticker);}catch(error){quote={name:holding.name||holding.stock_name||holding.ticker,price:null,ath:null,ath_date:null,quote_error:error.message};}
-      const ath = Number(quote.ath || 0), price = Number(quote.price || 0);
+      let ath = Number(quote.ath || 0);
+      const price = Number(quote.price || 0);
+      const betaFallback=(rebalanceHoldings||scope==='portfolio')?owned.filter(h=>(matchStock(h,watchlistStocks)?.ticker||h.ticker)===identity).reduce((sum,h)=>sum+(h.avg_price==null?NaN:Number(h.shares)*Number(h.avg_price)),0):0;
+      const betaCycle=query.mode==='beta'?await betaCycles.observe({userId:uid,ticker:identity,ath,athDate:quote.ath_date,budget:stockBudget,levels,trades,price,fallback:betaFallback,allowReset:!quote.quote_error&&!quote.stale,allowHistorical:!quote.quote_error}):null;
+      if(betaCycle)ath=Number(betaCycle.ath);
       const fall = ath > 0 ? ((price - ath) / ath) * 100 : null;
-      let cumulativeAllocation = 0;
-      // All paid buys consume the stock budget, including catch-up purchases in deeper zones.
-      const totalInvested = trades.filter(t=>t.type==='BUY' && Number(t.price)>0).reduce((sum,t)=>sum+Number(t.price)*Number(t.shares),0);
       const opportunityLevels = levels.map((level, index) => {
         const f = Number(level.fall);
         const lower = index < levels.length - 1 ? Number(levels[index + 1].fall) : -Infinity;
         const upperPrice = ath * (100 + f) / 100;
         const lowerPrice = lower === -Infinity ? 0 : ath * (100 + lower) / 100;
         const allocationAmount = stockBudget * Number(level.allocation) / 100;
-        cumulativeAllocation += allocationAmount;
-        const remainingAmount = Math.max(0,cumulativeAllocation-totalInvested);
         const active = ath > 0 && price > 0 && price <= upperPrice && price > lowerPrice;
         // Use the same non-overlapping price band for auto-selection and buy totals.
         // Zero-price bonus shares have no purchase-price zone; sales are not buys.
@@ -1098,21 +1205,20 @@ app.get('/api/portfolio-opportunities', auth, async (req, res) => {
         const boughtQuantity = zoneBuys.reduce((sum,t) => sum + Number(t.shares), 0);
         return { fall: f, allocation: Number(level.allocation), allocated_amount: allocationAmount,
           invested_amount: investedAmount, bought_quantity: boughtQuantity,
-          cumulative_allocated_amount: cumulativeAllocation, remaining_amount: remainingAmount,
-          suggested_amount: active ? remainingAmount : 0,
-          shares_to_buy: active ? Math.floor(remainingAmount / price) : 0,
+          shares_to_buy: price > 0 && ath > 0 ? Math.floor(allocationAmount / price) : 0,
           trigger_price: upperPrice, zone_min: lower, zone_max: f,
           active, selected: zoneBuys.length > 0 };
       });
       rows.push({ ticker: holding.ticker, name: quote.name || holding.stock_name || holding.ticker,
         ok_code: code, max_budget:stockBudget,
-        price:quote.price==null?null:price, ath:quote.ath==null?null:ath, ath_date: quote.ath_date || null, quote_error:quote.quote_error||null,
-        fall_pct: fall, levels: opportunityLevels });
+        price:quote.price==null?null:price, ath:quote.ath==null?null:ath, ath_date: betaCycle?.ath_date||quote.ath_date || null, quote_error:quote.quote_error||null,
+        ...(query.mode==='beta'?{beta_cycle:betaCycle}:{}),
+        fall_pct: fall, levels: query.mode==='beta'
+          ?applyOpportunityBeta(opportunityLevels,trades,stockBudget,price,ath,betaFallback,betaCycle):opportunityLevels });
     }
     rows.sort((a,b) => (b.fall_pct ?? 999) - (a.fall_pct ?? 999));
-    res.json({ success:true, data:{ scope, levels, rows } });
-  } catch (err) { res.status(500).json({ success:false,error:err.message }); }
-});
+    return {scope,levels,rows};
+}
 
 app.put('/api/portfolio-opportunities', auth, async (req,res) => {
   res.status(405).json({success:false,error:'Opportunity selections are calculated automatically from trades.'});
@@ -1139,23 +1245,23 @@ app.delete("/api/portfolio/:id", auth, async (req, res) => {
 // ─────────────────────────────────────────
 // ROUTES — TRADES
 // ─────────────────────────────────────────
-async function _syncPortfolio(uid, ticker, type, shares, price) {
-  const ex = await db.prepare("SELECT * FROM portfolio WHERE user_id=? AND ticker=?").get(uid, ticker);
+async function _syncPortfolio(uid, ticker, type, shares, price, database = db) {
+  const ex = await database.prepare("SELECT * FROM portfolio WHERE user_id=? AND ticker=?").get(uid, ticker);
   // New trades inherit the holding's saved stock configuration.
-  if (ex) await db.prepare('UPDATE trade_history SET stock_name=?,ok_code=? WHERE user_id=? AND ticker=?').run(ex.stock_name || '',ex.ok_code || '',uid,ticker);
+  if (ex) await database.prepare('UPDATE trade_history SET stock_name=?,ok_code=? WHERE user_id=? AND ticker=?').run(ex.stock_name || '',ex.ok_code || '',uid,ticker);
   if (type === "BUY") {
     if (ex) {
       const ns = ex.shares + shares;
       const np = ((ex.avg_price * ex.shares) + (price * shares)) / ns;
-      await db.prepare("UPDATE portfolio SET shares=?,avg_price=? WHERE user_id=? AND ticker=?").run(+ns.toFixed(4), +np.toFixed(4), uid, ticker);
+      await database.prepare("UPDATE portfolio SET shares=?,avg_price=? WHERE user_id=? AND ticker=?").run(+ns.toFixed(4), +np.toFixed(4), uid, ticker);
     } else {
-      await db.prepare("INSERT INTO portfolio (user_id,ticker,shares,avg_price) VALUES (?,?,?,?)").run(uid, ticker, shares, price);
+      await database.prepare("INSERT INTO portfolio (user_id,ticker,shares,avg_price) VALUES (?,?,?,?)").run(uid, ticker, shares, price);
     }
   }
   if (type === "SELL" && ex) {
     const ns = ex.shares - shares;
-    if (ns <= 0.0001) await db.prepare("DELETE FROM portfolio WHERE user_id=? AND ticker=?").run(uid, ticker);
-    else await db.prepare("UPDATE portfolio SET shares=? WHERE user_id=? AND ticker=?").run(+ns.toFixed(4), uid, ticker);
+    if (ns <= 0.0001) await database.prepare("DELETE FROM portfolio WHERE user_id=? AND ticker=?").run(uid, ticker);
+    else await database.prepare("UPDATE portfolio SET shares=? WHERE user_id=? AND ticker=?").run(+ns.toFixed(4), uid, ticker);
   }
 }
 
@@ -1242,7 +1348,11 @@ app.get("/api/trades", auth, async (req, res) => {
   if (exchange){ q+=" AND exchange=?"; p.push(normalizeExchangeCode(exchange)); }
   if (type)  { q+=" AND type=?";   p.push(type.toUpperCase()); }
   q+=" ORDER BY traded_at DESC LIMIT ?"; p.push(Number(limit));
-  res.json({ success:true, data:await db.prepare(q).all(...p) });
+  const data = await db.prepare(q).all(...p);
+  const stocks = await db.prepare('SELECT ticker,stock_code,yahoo_finance_code,code,name FROM watchlist WHERE user_id=? ORDER BY id DESC').all(await getOnepieceSystemUserId());
+  res.json({ success:true, data:data.map(trade => ({
+    ...trade, stock_name:trade.stock_name || matchStock(trade, stocks)?.name || ''
+  })) });
 });
 
 async function resolveTradeYahoo(uid,ticker,value,required=false) {
@@ -1260,10 +1370,73 @@ async function resolveTradeYahoo(uid,ticker,value,required=false) {
   }
   return code;
 }
-async function saveTradeYahoo(uid,ticker,code){
+async function saveTradeYahoo(uid,ticker,code,database=db){
   if(!code)return;
-  await db.prepare('UPDATE trade_history SET yahoo_finance_code=? WHERE user_id=? AND ticker=?').run(code,uid,ticker);
-  await db.prepare('UPDATE portfolio SET yahoo_finance_code=? WHERE user_id=? AND ticker=?').run(code,uid,ticker);
+  await database.prepare('UPDATE trade_history SET yahoo_finance_code=? WHERE user_id=? AND ticker=?').run(code,uid,ticker);
+  await database.prepare('UPDATE portfolio SET yahoo_finance_code=? WHERE user_id=? AND ticker=?').run(code,uid,ticker);
+}
+
+// Keep the holdings check and all trade writes in the same write transaction.
+async function recordPortfolioTrade(uid, trade, values, notes, tradeDate, yahooCode) {
+  await dbReady;
+  const stocks = values.type === 'SELL' ? await namedWatchlists.universe() : [];
+  return transactionRaw(async tx => {
+    const database = { prepare: sql => ({
+      get: async (...args) => normalizeDbRows(await tx.execute({sql,args}))[0],
+      all: async (...args) => normalizeDbRows(await tx.execute({sql,args})),
+      run: async (...args) => {
+        const result = await tx.execute({sql,args});
+        return {lastInsertRowid:Number(result.lastInsertRowid),changes:result.rowsAffected};
+      },
+    }) };
+    if (values.type === 'SELL') {
+      // Search uses Yahoo symbols, while imported/edited holdings may use a
+      // company name or exchange code. Resolve to the saved holding identity.
+      const holdings = await database.prepare('SELECT * FROM portfolio WHERE user_id=? AND shares>0').all(uid);
+      const identity = holding => {
+        if (holding.yahoo_finance_code) return String(holding.yahoo_finance_code).trim().toUpperCase();
+        // Legacy imports store numeric BSE codes without a holding-level Yahoo mapping.
+        const stock = matchStock(holding, stocks);
+        if (stock?.yahoo_finance_code) return String(stock.yahoo_finance_code).trim().toUpperCase();
+        const ticker = String(holding.ticker || '').trim().toUpperCase();
+        if (/\.(NS|BO)$/.test(ticker)) return ticker;
+        if (/^NSE:/.test(ticker)) return ticker.slice(4)+'.NS';
+        if (/^(BSE|BOM):/.test(ticker)) return ticker.slice(4)+'.BO';
+        return '';
+      };
+      const requestedCode = yahooCode || identity(trade);
+      let holding = holdings.find(h => h.ticker === trade.ticker);
+      if (holding && requestedCode && identity(holding) && identity(holding) !== requestedCode) {
+        const error = new Error('Ticker and Yahoo Finance Code refer to different stocks');
+        error.status = 400;
+        throw error;
+      }
+      if (!holding && requestedCode) {
+        const matches = holdings.filter(h => identity(h) === requestedCode);
+        if (matches.length > 1) {
+          const error = new Error('Multiple portfolio holdings match this stock. Use the exact portfolio stock code.');
+          error.status = 400;
+          throw error;
+        }
+        holding = matches[0];
+      }
+      if (holding) trade = {...trade,ticker:holding.ticker};
+      const available = Number(holding?.shares) || 0;
+      if (available <= 0 || values.shares > available) {
+        const error = new Error(available <= 0
+          ? 'You can only sell stocks you hold in your portfolio.'
+          : `Cannot sell ${values.shares} shares of ${trade.ticker}. You hold ${available} shares.`);
+        error.status = 400;
+        throw error;
+      }
+    }
+    const result = await database.prepare("INSERT INTO trade_history (user_id,exchange,ticker,type,shares,price,amount,notes,traded_at) VALUES (?,?,?,?,?,?,?,?,?)")
+      .run(uid,trade.exchange,trade.ticker,values.type,values.shares,values.price,values.amount,notes,tradeDate);
+    await _syncPortfolio(uid,trade.ticker,values.type,values.shares,values.price,database);
+    if (values.type === 'BUY') await _rebuildPortfolioForTicker(uid,trade.ticker,database);
+    await saveTradeYahoo(uid,trade.ticker,yahooCode,database);
+    return result;
+  });
 }
 
 app.post("/api/trades", auth, async (req, res) => {
@@ -1277,11 +1450,12 @@ app.post("/api/trades", auth, async (req, res) => {
   let yahooCode;
   try{yahooCode=await resolveTradeYahoo(uid,trade.ticker,req.body.yahoo_finance_code);}
   catch(error){return res.status(400).json({success:false,error:error.message});}
-  const r=await db.prepare("INSERT INTO trade_history (user_id,exchange,ticker,type,shares,price,amount,notes,traded_at) VALUES (?,?,?,?,?,?,?,?,?)").run(uid,trade.exchange,trade.ticker,values.type,values.shares,values.price,values.amount,notes||(values.price===0?'Bonus shares':null),tradeDate);
-  await _syncPortfolio(uid, trade.ticker, values.type, values.shares, values.price);
-  await _rebuildPortfolioForTicker(uid, trade.ticker);
-  await saveTradeYahoo(uid,trade.ticker,yahooCode);
-  res.json({ success:true, id:r.lastInsertRowid });
+  try {
+    const r=await recordPortfolioTrade(uid,trade,values,notes||(values.price===0?'Bonus shares':null),tradeDate,yahooCode);
+    res.json({ success:true, id:r.lastInsertRowid });
+  } catch(error) {
+    res.status(error.status || 500).json({success:false,error:error.message});
+  }
 });
 
 app.delete("/api/trades/:id", auth, async (req, res) => {
@@ -1323,21 +1497,16 @@ app.post("/api/trades/import", auth, async (req, res) => {
     const { trades } = req.body;
     if (!Array.isArray(trades) || !trades.length) return res.status(400).json({ success:false, error:"No trades provided" });
     const uid=req.user.id; let imported=0, skipped=0; const importErrors=[];
-    const affectedTickers = new Set();
     for (const t of trades) {
       try {
         if (!t?.ticker) throw new Error("missing ticker");
         const values = validateTradeNumbers(t.type, t.shares, t.price);
         const trade = splitTradeSymbol(t.ticker, t.exchange);
         const yahooCode = await resolveTradeYahoo(uid,trade.ticker,t.yahoo_finance_code,true);
-        await db.prepare("INSERT INTO trade_history (user_id,exchange,ticker,type,shares,price,amount,notes,traded_at) VALUES (?,?,?,?,?,?,?,?,?)").run(uid,trade.exchange,trade.ticker,values.type,values.shares,values.price,values.amount,t.notes||(values.price===0?'Imported (Bonus shares)':null),t.traded_at||new Date().toISOString());
-        affectedTickers.add(trade.ticker);
-        await _syncPortfolio(uid, trade.ticker, values.type, values.shares, values.price);
-        await saveTradeYahoo(uid,trade.ticker,yahooCode);
+        await recordPortfolioTrade(uid,trade,values,t.notes||(values.price===0?'Imported (Bonus shares)':null),t.traded_at||new Date().toISOString(),yahooCode);
         imported++;
       } catch(e){ importErrors.push(`[${t?.ticker || '?'}] ${e.message}`); skipped++; }
     }
-    for (const ticker of affectedTickers) await _rebuildPortfolioForTicker(uid, ticker);
     res.json({ success:true, summary:{ total:trades.length, imported, skipped }, errors:importErrors });
   } catch (err) {
     res.status(500).json({ success:false, error: err.message || "Import failed" });

@@ -23,12 +23,13 @@ test('admin universe edits persist through refresh, reject conflicts, and preser
  await assert.rejects(transaction(tx=>saveUniverseConfig(tx,99,'MISSING',body)),/not found/);
  await client.execute("UPDATE watchlist SET code='A1',stock_code='NSE:A',cmp=150 WHERE user_id=99 AND ticker='NSE:A'");
  await transaction(tx=>applyUniverseConfig(tx,99));
- const row=(await client.execute("SELECT * FROM watchlist WHERE user_id=99 AND ticker='NSE:A'")).rows[0];assert.equal(row.code,'NEW');assert.equal(row.stock_code,'BOM:500001');assert.equal(row.cmp,150);assert.equal(row.yahoo_finance_code,'NSE:A');
- const changed=await transaction(tx=>saveUniverseConfig(tx,99,'NSE:A',{...current,code:'NEW',stock_code:'BOM:500001',yahoo_finance_code:'RELIANCE.NS',expected_yahoo_finance_code:'NSE:A'}));
+ const row=(await client.execute("SELECT * FROM watchlist WHERE user_id=99 AND ticker='NSE:A'")).rows[0];assert.equal(row.code,'NEW');assert.equal(row.stock_code,'BOM:500001');assert.equal(row.cmp,150);assert.equal(row.yahoo_finance_code,'A.NS');
+ const changed=await transaction(tx=>saveUniverseConfig(tx,99,'NSE:A',{...current,code:'NEW',stock_code:'BOM:500001',yahoo_finance_code:'RELIANCE.NS',expected_yahoo_finance_code:'A.NS'}));
  assert.equal(changed.yahoo_finance_code,'RELIANCE.NS');
  await transaction(tx=>applyUniverseConfig(tx,99));
  assert.equal((await client.execute("SELECT yahoo_finance_code FROM watchlist WHERE user_id=99 AND ticker='NSE:A'")).rows[0].yahoo_finance_code,'RELIANCE.NS');
  assert.equal((await client.execute('SELECT completed_at FROM yahoo_refresh_state')).rows[0].completed_at,0);
+ await assert.rejects(transaction(tx=>saveUniverseConfig(tx,99,'NSE:A',{...current,code:'NEW',stock_code:'BOM:500001',yahoo_finance_code:'NSE:RELIANCE',expected_yahoo_finance_code:'RELIANCE.NS'})),/ending .NS or .BO/);
  await assert.rejects(transaction(tx=>saveUniverseConfig(tx,99,'NSE:A',{...current,code:'NEW',stock_code:'BOM:500001',yahoo_finance_code:'INVALID',expected_yahoo_finance_code:'RELIANCE.NS'})),/valid Yahoo Finance/);
  assert.equal((await client.execute('SELECT code FROM watchlist WHERE user_id=1')).rows[0].code,'PRIVATE');
  await transaction(tx=>saveUniverseConfig(tx,99,'NSE:A',{...current,code:'',stock_code:'NSE:A'}));
@@ -40,6 +41,6 @@ test('stock configuration routes require admin authorization and user settings r
  const routes=[],adminAuth=()=>{};
  const code=source.slice(source.indexOf("app.get('/api/admin/stock-config'"),source.indexOf("app.get('/api/admin/leaderboard'"));
  vm.runInNewContext(code,{app:{get:(path,middleware)=>routes.push({path,middleware}),put:(path,middleware)=>routes.push({path,middleware}),post:(path,middleware)=>routes.push({path,middleware}),delete:(path,middleware)=>routes.push({path,middleware})},adminAuth});
- assert.equal(routes.length,5);assert.ok(routes.every(route=>route.middleware===adminAuth));assert.ok(!source.includes("app.put('/api/settings/stocks"));
+ assert.equal(routes.length,6);assert.ok(routes.every(route=>route.middleware===adminAuth));assert.ok(routes.some(route=>route.path==='/api/admin/stock-config/validate-yahoo'));assert.ok(!source.includes("app.put('/api/settings/stocks"));
  assert.ok(!source.includes("fetchGoogleSheet"));
 });

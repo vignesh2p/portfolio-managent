@@ -4,7 +4,9 @@ function leaderboard(users,holdings,trades,stocks,xirr,matchStock,now=new Date()
     const owned=holdings.filter(h=>h.user_id===user.id&&Number(h.shares)>0);
     let value=0,missing=false;
     for(const h of owned){const stock=matchStock(h,stocks);if(!stock||!Number.isFinite(Number(stock.cmp))||Number(stock.cmp)<=0){missing=true;continue;}value+=Number(h.shares)*Number(stock.cmp);}
-    const flows=trades.filter(t=>t.user_id===user.id).map(t=>({amount:(t.type==='BUY'?-1:1)*Math.abs(Number(t.amount)),date:new Date(t.traded_at)}));
+    // Legacy current-holdings return: omit the history of fully exited stocks.
+    const heldTickers=new Set(owned.map(h=>h.ticker));
+    const flows=trades.filter(t=>t.user_id===user.id&&heldTickers.has(t.ticker)).map(t=>({amount:(t.type==='BUY'?-1:1)*Math.abs(Number(t.amount)),date:new Date(t.traded_at)}));
     if(value>0)flows.push({amount:value,date:now});
     const valid=flows.every(f=>Number.isFinite(f.amount)&&Number.isFinite(+f.date))&&new Set(flows.map(f=>+f.date)).size>1;
     const eligible=xirrEligible(trades.filter(t=>t.user_id===user.id),true,now);

@@ -1,6 +1,7 @@
 // Adapted from onepiece-yfinance's quote + monthly/daily history lookup.
 const schema='CREATE TABLE IF NOT EXISTS yahoo_quote_cache (stock_code TEXT PRIMARY KEY,data_json TEXT NOT NULL,fetched_at INTEGER NOT NULL)';
 const TTL=30*60*1000;
+const ATH_TTL=24*60*60*1000;
 const sharedSchema=[
  'CREATE TABLE IF NOT EXISTS yahoo_shared_quotes (yahoo_symbol TEXT PRIMARY KEY,data_json TEXT NOT NULL,fetched_at INTEGER NOT NULL)',
  'CREATE TABLE IF NOT EXISTS yahoo_symbol_aliases (stock_code TEXT PRIMARY KEY,yahoo_symbol TEXT NOT NULL)',
@@ -30,12 +31,17 @@ async function resolveYahooSymbol(yf,stock){
  }
  return symbol;
 }
-async function getYahooData(yf,stock,resolvedSymbol){
+async function getYahooData(yf,stock,resolvedSymbol,saved=null,now=Date.now()){
  const symbol=resolvedSymbol||await resolveYahooSymbol(yf,stock);
  const quote=await yf.quote(symbol);
  if(!quote||!Number.isFinite(quote.regularMarketPrice)||quote.regularMarketPrice<=0)throw new Error('No Yahoo price for '+symbol);
- let ath=null,ath_date=null,quote_error=null;
+ const hasSavedAth=Number.isFinite(saved?.ath)&&saved.ath>0&&saved.ath_date;
+ let ath=hasSavedAth?saved.ath:null,ath_date=hasSavedAth?saved.ath_date:null,quote_error=null;
+ let ath_fetched_at=hasSavedAth?saved.ath_fetched_at:null;
+ const historyFresh=hasSavedAth&&Number.isFinite(Date.parse(ath_fetched_at))&&now-Date.parse(ath_fetched_at)<ATH_TTL&&!(quote.fiftyTwoWeekHigh>ath+0.02);
+ if(!historyFresh){
  try{
+   ath=null;ath_date=null;
    const monthly=await yf.chart(symbol,{period1:'1970-01-01',interval:'1mo'});
    const candles=(monthly.quotes||[]).filter(q=>Number.isFinite(q.high)&&q.high>0);
    const peak=Math.max(...candles.map(q=>q.high));
@@ -53,9 +59,17 @@ async function getYahooData(yf,stock,resolvedSymbol){
    const currentHigh=Math.max(quote.regularMarketPrice,quote.regularMarketDayHigh||0);
    if(currentHigh>ath&&quote.regularMarketTime){ath=currentHigh;ath_date=tradingDate(quote.regularMarketTime);}
    if(Number.isFinite(quote.fiftyTwoWeekHigh)&&quote.fiftyTwoWeekHigh>ath+0.02)throw new Error('Historical ATH is inconsistent with the quote');
- }catch(e){ath=null;ath_date=null;quote_error='ATH unavailable: '+e.message;}
+   ath_fetched_at=new Date(now).toISOString();
+ }catch(e){
+   ath=hasSavedAth?saved.ath:null;ath_date=hasSavedAth?saved.ath_date:null;
+   quote_error=(hasSavedAth?'Last known ATH; refresh failed: ':'ATH unavailable: ')+e.message;
+ }
+ }
+ // A new observed high updates the saved ATH even between daily history checks.
+ const currentHigh=Math.max(quote.regularMarketPrice,quote.regularMarketDayHigh||0);
+ if(ath!==null&&currentHigh>ath&&quote.regularMarketTime){ath=currentHigh;ath_date=tradingDate(quote.regularMarketTime);}
  const price=quote.regularMarketPrice,change=quote.regularMarketChange??0;
- return {ticker:stock.ticker,yahoo_symbol:symbol,name:stock.name||quote.longName||quote.shortName||symbol,price,cmp:price,change,changePct:quote.regularMarketChangePercent??0,prevClose:quote.regularMarketPreviousClose??price-change,ath:ath===null?null:Number(ath.toFixed(2)),ath_date,source:'YAHOO_FINANCE',price_as_of:quote.regularMarketTime?new Date(quote.regularMarketTime).toISOString():null,quote_fetched_at:new Date().toISOString(),quote_error};
+ return {ticker:stock.ticker,yahoo_symbol:symbol,name:stock.name||quote.longName||quote.shortName||symbol,price,cmp:price,pe:Number.isFinite(quote.trailingPE)?quote.trailingPE:null,change,changePct:quote.regularMarketChangePercent??0,prevClose:quote.regularMarketPreviousClose??price-change,ath:ath===null?null:Number(ath.toFixed(2)),ath_date,ath_fetched_at,source:'YAHOO_FINANCE',price_as_of:quote.regularMarketTime?new Date(quote.regularMarketTime).toISOString():null,quote_fetched_at:new Date(now).toISOString(),quote_error};
 }
 function createYahooPrices({db,yf,now=Date.now}){
  const pending=new Map(),failures=new Map();
@@ -73,7 +87,7 @@ function createYahooPrices({db,yf,now=Date.now}){
    const cached=await db.prepare('SELECT data_json,fetched_at FROM yahoo_shared_quotes WHERE yahoo_symbol=?').get(symbol);
    if(!cached)throw new Error('Price is not cached yet. The shared universe refresh will load it.');
    const data=JSON.parse(cached.data_json),stale=now()-Number(cached.fetched_at)>=TTL;
-   return {...data,ticker:stock.ticker,name:stock.name||data.name,stale,cache_expires_at:new Date(Number(cached.fetched_at)+TTL).toISOString(),quote_error:stale?'Cached Yahoo price is older than 30 minutes; refresh pending.':data.quote_error};
+   return {...data,pe:Number.isFinite(data.pe)?data.pe:null,ticker:stock.ticker,name:stock.name||data.name,stale,cache_expires_at:new Date(Number(cached.fetched_at)+TTL).toISOString(),quote_error:stale?'Cached Yahoo price is older than 30 minutes; refresh pending.':data.quote_error};
  }
  async function readStocks(stocks){
    const [quotes,aliases]=await Promise.all([
@@ -88,21 +102,22 @@ function createYahooPrices({db,yf,now=Date.now}){
        const cached=bySymbol.get(byCode.get(code)||yahooSymbol(code));
        if(!cached)throw new Error('Price is not cached yet. The shared universe refresh will load it.');
        const data=JSON.parse(cached.data_json),stale=now()-Number(cached.fetched_at)>=TTL;
-       return {...stock,...data,ticker:stock.ticker,name:stock.name||data.name,cmp:data.price,stale,cache_expires_at:new Date(Number(cached.fetched_at)+TTL).toISOString(),quote_error:stale?'Cached Yahoo price is older than 30 minutes; refresh pending.':data.quote_error};
-     }catch(error){return {...stock,price:null,cmp:null,change:null,changePct:null,ath:null,ath_date:null,price_as_of:null,quote_fetched_at:null,source:'YAHOO_FINANCE',quote_error:error.message};}
+       return {...stock,...data,pe:Number.isFinite(data.pe)?data.pe:null,ticker:stock.ticker,name:stock.name||data.name,cmp:data.price,stale,cache_expires_at:new Date(Number(cached.fetched_at)+TTL).toISOString(),quote_error:stale?'Cached Yahoo price is older than 30 minutes; refresh pending.':data.quote_error};
+     }catch(error){return {...stock,price:null,cmp:null,pe:null,change:null,changePct:null,ath:null,ath_date:null,price_as_of:null,quote_fetched_at:null,source:'YAHOO_FINANCE',quote_error:error.message};}
    });
  }
- async function fetchStock(stock){
+ async function fetchStock(stock,{force=false}={}){
    const key=await symbolFor(stock,true);
-   const failure=failures.get(key);if(failure&&now()-failure.at<60000)throw failure.error;
+   const failure=failures.get(key);if(!force&&failure&&now()-failure.at<60000)throw failure.error;
    if(pending.has(key))return pending.get(key);
    const work=(async()=>{
      const cached=await db.prepare('SELECT data_json,fetched_at FROM yahoo_shared_quotes WHERE yahoo_symbol=?').get(key);
      const saved=cached?JSON.parse(cached.data_json):null;
-     if(saved&&now()-Number(cached.fetched_at)<TTL)return {...saved,ticker:stock.ticker};
+     if(!force&&saved&&now()-Number(cached.fetched_at)<TTL)return {...saved,ticker:stock.ticker};
      try{
-       const data=await getYahooData(yf,stock,key);
+       const data=await getYahooData(yf,stock,key,saved,now());
        await db.prepare('INSERT INTO yahoo_shared_quotes(yahoo_symbol,data_json,fetched_at) VALUES (?,?,?) ON CONFLICT(yahoo_symbol) DO UPDATE SET data_json=excluded.data_json,fetched_at=excluded.fetched_at').run(key,JSON.stringify(data),now());
+       failures.delete(key);
        return data;
      }catch(e){if(saved)return {...saved,ticker:stock.ticker,quote_error:'Last known Yahoo data; refresh failed: '+e.message,stale:true};failures.set(key,{at:now(),error:e});throw e;}
    })();pending.set(key,work);try{return await work;}finally{pending.delete(key);}
@@ -110,6 +125,6 @@ function createYahooPrices({db,yf,now=Date.now}){
  return {fetchStock,readStock,readStocks};
 }
 async function applyCachedUniverseQuotes(tx,systemId){
- await tx.execute({sql:`UPDATE watchlist SET (cmp,change,ath,ath_date,price_as_of,quote_fetched_at,quote_error)=(SELECT json_extract(q.data_json,'$.price'),json_extract(q.data_json,'$.change'),json_extract(q.data_json,'$.ath'),json_extract(q.data_json,'$.ath_date'),json_extract(q.data_json,'$.price_as_of'),json_extract(q.data_json,'$.quote_fetched_at'),json_extract(q.data_json,'$.quote_error') FROM yahoo_symbol_aliases a JOIN yahoo_shared_quotes q ON q.yahoo_symbol=a.yahoo_symbol WHERE a.stock_code=watchlist.yahoo_finance_code) WHERE user_id=? AND yahoo_finance_code IN (SELECT a.stock_code FROM yahoo_symbol_aliases a JOIN yahoo_shared_quotes q ON q.yahoo_symbol=a.yahoo_symbol)`,args:[systemId]});
+ await tx.execute({sql:`UPDATE watchlist SET (cmp,pe,change,ath,ath_date,price_as_of,quote_fetched_at,quote_error)=(SELECT json_extract(q.data_json,'$.price'),json_extract(q.data_json,'$.pe'),json_extract(q.data_json,'$.change'),json_extract(q.data_json,'$.ath'),json_extract(q.data_json,'$.ath_date'),json_extract(q.data_json,'$.price_as_of'),json_extract(q.data_json,'$.quote_fetched_at'),json_extract(q.data_json,'$.quote_error') FROM yahoo_symbol_aliases a JOIN yahoo_shared_quotes q ON q.yahoo_symbol=a.yahoo_symbol WHERE a.stock_code=watchlist.yahoo_finance_code) WHERE user_id=? AND yahoo_finance_code IN (SELECT a.stock_code FROM yahoo_symbol_aliases a JOIN yahoo_shared_quotes q ON q.yahoo_symbol=a.yahoo_symbol)`,args:[systemId]});
 }
-module.exports={schema,sharedSchema,TTL,yahooSymbol,tradingDate,getYahooData,createYahooPrices,applyCachedUniverseQuotes};
+module.exports={schema,sharedSchema,TTL,ATH_TTL,yahooSymbol,tradingDate,getYahooData,createYahooPrices,applyCachedUniverseQuotes};

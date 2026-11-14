@@ -1,23 +1,36 @@
-> Current behavior: the stock universe is managed in Admin → Stocks Config. Existing stocks are retained. No Google Sheets imports or network requests run. Login and optional cron refresh Yahoo quotes for saved stocks only.
-
 # Yahoo Finance market data
 
-The provider is adapted from `onepiece-yfinance/src/services/stockService.ts` using `yahoo-finance2` 4.0.5 and Node 22. No separate Python service or provider API key is required.
+The stock universe is maintained in Admin → Stocks Config. Refreshes retain
+existing stocks and fetch only their configured Yahoo Finance symbols.
+No Google Sheets imports run. The provider uses yahoo-finance2 4.0.5.
 
-Google Sheets supplies the stock universe and company metadata. Admin CODE and Stock Code overrides still apply. Price, daily change, ATH and ATH date come only from Yahoo Finance. There is no fallback to Sheets market data.
+The PE column uses Yahoo's trailing P/E (`trailingPE`) from the same quote
+request. It is persisted in the shared quote cache and stock universe. Missing
+or non-finite values remain null; forward P/E is not substituted. Older cache
+entries gain PE during their next normal market-hours refresh.
 
-Yahoo Finance Code conversion:
+All users share a persistent 30-minute quote cache, keyed by resolved Yahoo symbol.
+NSE codes map to .NS; BOM/BSE codes map to .BO. Numeric BSE identifiers are
+resolved only with exact normalized company names on the correct exchange.
+Missing or ambiguous codes remain errors rather than guessed mappings.
 
-- `NSE:RELIANCE` → `RELIANCE.NS`
-- `BOM:GRWRHITECH` or `BSE:GRWRHITECH` → `GRWRHITECH.BO`
-- Numeric BSE codes are searched by company name, restricted to `.BO` with an exact name match after punctuation/company-suffix normalization. Unverified mappings remain errors. Admin can set the symbolic Yahoo Finance Code explicitly.
-- Already suffixed `.NS`/`.BO` symbols are supported. Missing exchange identifiers are errors, not guesses.
+Sign-in only authenticates. Portfolio, Watchlist and Opportunities read saved
+quotes immediately. Browser refreshes run independently at low network priority
+on session opening and every 30 minutes; no page API waits for them. Reopening
+a tab reads newly saved prices. Portfolio status shows the oldest fetched time
+and warns about stale or missing prices.
 
-All users share a 30-minute persistent cache in `yahoo_shared_quotes`, keyed by the resolved Yahoo ticker (for example RELIANCE.NS or GRWRHITECH.BO). Yahoo Finance Code aliases point to that shared key. Existing cache rows are migrated automatically. Expired quotes remain visibly stale until refreshed, with their original timestamp.
+The included GitHub Actions scheduler refreshes the universe during weekday
+trading hours; see WATCHLIST-SCHEDULER.md for activation and required secrets.
+All refresh callers share a database lease and the same quote cache. Six workers
+process stocks within a time budget. Failed or deferred updates retain saved data;
+provider failures return last-known quotes with their original timestamps.
 
-Login and restored signed-in sessions request a universe refresh. Signed-in sessions check every 30 minutes. A database lease deduplicates concurrent refreshes across users and server instances. Portfolio, Watchlist and Opportunities only read saved quotes; navigation never calls Yahoo. Refreshes use six workers with a request time budget; failed or deferred rows show an error. The optional cron uses the same shared refresh coordinator; deployment does not activate a scheduler.
-
-ATH uses all available monthly highs, then daily candles in the peak month(s). Dates use Asia/Kolkata. If daily refinement fails, or history conflicts with the quoted 52-week high, ATH and its date are unavailable rather than being fabricated. Yahoo coverage, historical adjustments and missing candles determine the available history.
-
-
-Each stock has an independent `yahoo_finance_code`, initially copied from its Stock Code. Admin → Stocks Config edits it separately. Existing values and future edits survive Sheets imports. All Yahoo quote, history, symbol resolution and cache reads use this field. New universe stocks receive their initial value from Stock Code.
+Historical ATH checks have a separate 24-hour lifetime stored as ath_fetched_at
+inside the quote JSON. Existing cache rows without that field refresh history on
+the next expired quote. A successful history check examines monthly highs and
+refines the peak using daily candles, with dates in Asia/Kolkata. Between checks,
+new observed daily highs update ATH without downloading history again. A quoted
+52-week high inconsistent with saved ATH forces revalidation. Failed history
+checks preserve a previous verified ATH with a warning; without one, ATH remains
+unavailable. Failed checks remain due for retry at the next quote refresh.

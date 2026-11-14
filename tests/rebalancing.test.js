@@ -3,17 +3,27 @@ const {createClient}=require('@libsql/client');
 const r=require('../rebalancing');
 const match=(h,stocks)=>stocks.find(s=>s.ticker===h.ticker);
 
-test('rebalancing combinations respect cumulative remaining stock budgets',()=>{
- const rows=[{ticker:'A',fall:-20,allocation:30,price:80,suggested_amount:3000},{ticker:'B',fall:-20,allocation:10,price:100,suggested_amount:1000}];
- const plans=r.combinations(rows,20000);
- assert.ok(plans.length>0);
- assert.ok(plans.every(plan=>plan.buys.every(b=>b.shares*b.price<=b.suggested_amount)));
- assert.equal(plans.find(p=>p.buys.length===1&&p.buys[0].ticker==='A').buys[0].shares,37);
+test('portfolio and new tabs partition mapped active holdings and generate independent SIP combinations',()=>{
+ const now=new Date('2026-10-25T00:00:00+05:30');
+ const stocks=['SOURCE','HELD','HELD2','NEW','EXITED'].map((ticker,i)=>({ticker,name:ticker,stock_code:'NSE:'+ticker,price:i%2?70:90,ath:100,ath_date:'2026-10-01'}));
+ const holdings=[{ticker:'SOURCE',shares:10},{ticker:'CUSTOM',mapped:'HELD',shares:2},{ticker:'HELD2',shares:1},{ticker:'EXITED',shares:0}];
+ const mapped=(h,list)=>list.find(s=>s.ticker===(h.mapped||h.ticker));
+ const rows=r.candidates(stocks,holdings,[{fall:-10,allocation:25},{fall:-30,allocation:75}],new Set(stocks.map(s=>s.ticker)),holdings[0],mapped,now);
+ const groups=r.opportunityGroups(rows,10000);
+ assert.deepEqual(groups.portfolio.candidates.map(s=>s.ticker).sort(),['CUSTOM','HELD2']);
+ assert.deepEqual(groups.new.candidates.map(s=>s.ticker).sort(),['EXITED','NEW']);
+ for(const [scope,group] of Object.entries(groups)){
+  const allowed=new Set(group.candidates.map(s=>s.ticker));
+  assert.ok(group.combinations.some(p=>p.buys.length===2));
+  assert.ok(group.combinations.every(p=>p.buys.every(b=>allowed.has(b.ticker)&&b.in_portfolio===(scope==='portfolio'))));
+  assert.deepEqual([...new Set(group.candidates.map(c=>c.fall))].sort(),[-10,-30]);
+ }
+ assert.deepEqual(r.opportunityGroups([],1000),{portfolio:{candidates:[],combinations:[]},new:{candidates:[],combinations:[]}});
 });
 test('ATH age strictly exceeds 365 days; SIP bands do not overlap and combinations use full budget weights',()=>{
  const now=new Date('2026-10-25T00:00:00+05:30');
  const stocks=[{ticker:'OLD',ath_date:'2025-10-24',price:100},{ticker:'YEAR',ath_date:'2025-10-25'},{ticker:'BAD',ath_date:'2025-02-30'}];
- assert.deepEqual(r.sourceRows(stocks.map(s=>({ticker:s.ticker,shares:2,avg_price:50})),stocks,match,now).map(s=>s.ticker),['OLD']);
+ assert.deepEqual(r.sourceRows(stocks.map(s=>({ticker:s.ticker,shares:2,avg_price:50,xirr_pct:10})),stocks,match,now).map(s=>s.ticker),['OLD']);
  const levels=[{fall:-10,allocation:25},{fall:-30,allocation:75}];
  const targets=[{ticker:'A',price:90},{ticker:'B',price:70},{ticker:'C',price:80},{ticker:'D',price:85}].map(s=>({...s,code:s.ticker,stock_code:'NSE:'+s.ticker,ath:100,ath_date:'2026-10-01'}));
  const rows=r.candidates(targets,[],levels,new Set(['A','B','C','D']),{ticker:'OLD'},match,now);
@@ -52,7 +62,7 @@ test('rebalance is atomic, user scoped, oversell/overspend safe and idempotent',
 
 test('replacement quantities use sale market value, all affordable singles remain available, and each SIP level sorts by ATH age',()=>{
  const stocks=[{ticker:'OLD',price:200,ath_date:'2024-01-01'}];
- const source=r.sourceRows([{ticker:'OLD',shares:10,avg_price:50}],stocks,match,new Date('2026-10-25'))[0];
+ const source=r.sourceRows([{ticker:'OLD',shares:10,avg_price:50,xirr_pct:10}],stocks,match,new Date('2026-10-25'))[0];
  assert.equal(source.invested_amount,500);assert.equal(source.market_value,2000);
  const rows=[40,5,20,10,15].map((days,i)=>({ticker:'NEW'+i,allocation:50,fall:-10,price:100,days_since:days}));
  const plans=r.combinations(rows,source.market_value),singles=plans.filter(p=>p.buys.length===1);
@@ -67,4 +77,14 @@ test('replacement suggestions include days 0 through 99 only, excluding unknown 
  const rows=r.candidates(stocks,[],[{fall:-10,allocation:100}],new Set(stocks.map(s=>s.ticker)),{ticker:'OLD'},match,now);
  assert.deepEqual(rows.map(s=>s.days_since),[0,99]);
  assert.ok(r.combinations(rows,1000).every(p=>p.buys.every(b=>b.days_since<100)));
+});
+
+test('losers require both old ATH and finite XIRR strictly below the user target',()=>{
+ const now=new Date('2026-11-06T00:00:00Z');
+ const holdings=[-10,0,20,29.99,30,40,null,NaN].map((xirr_pct,i)=>({ticker:String(i),shares:1,avg_price:100,xirr_pct}));
+ const stocks=holdings.map(h=>({ticker:h.ticker,ath_date:'2024-01-01',price:100}));
+ assert.deepEqual(r.sourceRows(holdings,stocks,match,now).map(h=>h.xirr_pct),[-10,0,20,29.99]);
+ assert.deepEqual(r.sourceRows(holdings,stocks,match,now,20).map(h=>h.xirr_pct),[-10,0]);
+ assert.deepEqual(r.sourceRows(holdings,stocks,match,now,0).map(h=>h.xirr_pct),[-10]);
+ assert.equal(r.sourceRows(holdings,stocks.map(s=>({...s,ath_date:'2026-01-01'})),match,now).length,0);
 });

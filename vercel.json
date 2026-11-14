@@ -1,6 +1,8 @@
 {
   "functions": {
-    "api/index.js": { "maxDuration": 120 }
+    "api/index.js": {
+      "maxDuration": 120
+    }
   },
   "rewrites": [
     {
@@ -14,6 +16,12 @@
     {
       "source": "/admin/",
       "destination": "/admin.html"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/portfolio-history",
+      "schedule": "30 10 * * *"
     }
   ]
 }
