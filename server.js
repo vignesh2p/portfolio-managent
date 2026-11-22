@@ -628,7 +628,7 @@ async function universeStock(ticker){
 }
 async function fetchPrice(ticker){return yahooPrices.readStock(await universeStock(ticker));}
 async function fetchPriceFromWatchlistTable(ticker){return fetchPrice(ticker);}
-async function refreshYahooUniverse({force=false,after=''}={}){
+async function refreshYahooUniverse({force=false,scheduled=false,after=''}={}){
   const systemId=await getOnepieceSystemUserId();
   const stocks=force
     ?await db.prepare('SELECT ticker,stock_code,yahoo_finance_code,code,name FROM watchlist WHERE user_id=? AND ticker>? ORDER BY ticker LIMIT 12').all(systemId,after)
@@ -640,7 +640,7 @@ async function refreshYahooUniverse({force=false,after=''}={}){
       const stock=stocks[index++];let data;
       try{
         if(Date.now()>deadline){failed++;errors.push({ticker:stock.ticker,error:'Refresh time limit reached; retry this stock.'});continue;}
-        data=await yahooPrices.fetchStock(stock,{force});
+        data=await yahooPrices.fetchStock(stock,{force:force||scheduled});
         if(data.stale)throw new Error(data.quote_error||'Provider returned saved data instead of a fresh quote.');
         await db.prepare('UPDATE watchlist SET cmp=?,pe=?,change=?,ath=?,ath_date=?,price_as_of=?,quote_fetched_at=?,quote_error=?,source=? WHERE user_id=? AND ticker=? AND yahoo_finance_code=?').run(data.price,data.pe??null,data.change,data.ath,data.ath_date,data.price_as_of,data.quote_fetched_at,data.quote_error||null,'YAHOO_FINANCE',systemId,stock.ticker,stock.yahoo_finance_code);
         await syncBetaCyclesForQuote(stock,data);
@@ -992,7 +992,7 @@ app.post('/api/prices/refresh',auth,async(req,res)=>{
 const dailyPortfolioHistory=portfolioHistory.createHistory({db,transaction:async fn=>{await dbReady;return transactionRaw(fn);},universe:()=>namedWatchlists.universe(),matchStock:matchPriceStock,refresh:coordinatedPriceRefresh,systemEmail:ONEPIECE_SYSTEM_EMAIL});
 app.get('/api/portfolio-history',auth,dailyPortfolioHistory.history);
 app.get('/api/cron/portfolio-history',dailyPortfolioHistory.cron);
-app.get("/api/cron/watchlist", createWatchlistCronHandler({db,sync:coordinatedPriceRefresh}));
+app.get("/api/cron/watchlist", createWatchlistCronHandler({db,sync:()=>coordinatedPriceRefresh({scheduled:true})}));
 
 app.post("/api/watchlist/sync", auth, async (req, res) => {
   try {

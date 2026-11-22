@@ -12,7 +12,7 @@ function createSharedPriceRefresh({db,transactionRaw,refresh,now=Date.now,wait=m
    const state=await transactionRaw(async tx=>{
     const row=(await tx.execute('SELECT * FROM yahoo_refresh_state WHERE id=1')).rows[0];
     if(Number(row.lease_until)>now())return {busy:true};
-    if(!force&&Number(row.completed_at)>0&&now()-Number(row.completed_at)<TTL)return {cached:true,...JSON.parse(row.summary_json||'{}')};
+    if(!force&&Number(row.completed_at)>0&&(options.scheduled ? watchlistSlot(new Date(Number(row.completed_at)))===watchlistSlot(new Date(now())) : now()-Number(row.completed_at)<TTL))return {cached:true,...JSON.parse(row.summary_json||'{}')};
     await tx.execute({sql:'UPDATE yahoo_refresh_state SET owner=?,lease_until=? WHERE id=1',args:[owner,now()+120000]});
     return {owned:true};
    });

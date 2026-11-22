@@ -66,7 +66,7 @@ test('persistent 30-minute Yahoo-symbol cache, read-only page access and last-kn
  const db={prepare:sql=>sql.includes('yahoo_symbol_aliases')?{get:async key=>aliases.has(key)?{yahoo_symbol:aliases.get(key)}:undefined,run:async(key,symbol)=>aliases.set(key,symbol)}:{get:async key=>cache.get(key),run:async(key,data_json,fetched_at)=>cache.set(key,{data_json,fetched_at})}};
  const service=createYahooPrices({db,yf,now:()=>now});
  await Promise.all([service.fetchStock(stock),service.fetchStock(stock)]);assert.equal(calls,1);
- assert.equal(TTL,30*60*1000);assert.ok(cache.has('RELIANCE.NS'));assert.ok(!cache.has('NSE:RELIANCE'));
+ assert.equal(TTL,15*60*1000);assert.ok(cache.has('RELIANCE.NS'));assert.ok(!cache.has('NSE:RELIANCE'));
  await service.fetchStock({...stock,yahoo_finance_code:'RELIANCE.NS'});assert.equal(calls,1);
  await service.readStock(stock);assert.equal(calls,1);
  now+=TTL-1;await createYahooPrices({db,yf,now:()=>now}).fetchStock(stock);assert.equal(calls,1);
