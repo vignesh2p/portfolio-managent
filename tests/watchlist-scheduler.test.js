@@ -1,14 +1,14 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {watchlistSlot,createWatchlistCronHandler}=require('../watchlist-scheduler');
-test('IST trading window includes 14 weekday half-hour slots and excludes weekends',()=>{
+test('IST trading window includes 27 weekday quarter-hour slots and excludes weekends',()=>{
   const slots=new Set();
-  for(let minutes=540;minutes<=930;minutes+=30){
+  for(let minutes=540;minutes<=930;minutes+=15){
     const date=new Date(Date.UTC(2026,9,19,0,minutes-330));
     assert.ok(watchlistSlot(date));
     slots.add(watchlistSlot(date));
   }
-  assert.equal(slots.size,14);
+  assert.equal(slots.size,27);
   for(const date of ['2026-10-19T03:29:00Z','2026-10-19T10:01:00Z','2026-10-17T03:30:00Z','2026-10-18T03:30:00Z']){
     assert.equal(watchlistSlot(new Date(date)),null);
   }

@@ -59,14 +59,14 @@ test('does not invent ATH or its date from a monthly/52-week fallback',async()=>
  const yf=provider();yf.chart=async()=>{throw Error('Unavailable');};const row=await getYahooData(yf,stock);assert.equal(row.price,100);assert.equal(row.ath,null);assert.equal(row.ath_date,null);assert.match(row.quote_error,/ATH unavailable/);
  const other=provider();other.chart=async(s,{interval})=>({quotes:interval==='1mo'?[{date:new Date('2024-01-01'),high:150}]:[]});assert.equal((await getYahooData(other,stock)).ath_date,null);
 });
-test('persistent 30-minute Yahoo-symbol cache, read-only page access and last-known Yahoo fallback',async()=>{
+test('persistent 5-minute Yahoo-symbol cache, read-only page access and last-known Yahoo fallback',async()=>{
  const cache=new Map();let now=1000000,calls=0,fail=false;
  const yf=provider(),quote=yf.quote;yf.quote=async symbol=>{calls++;if(fail)throw Error('Provider down');return quote(symbol);};
  const aliases=new Map();
  const db={prepare:sql=>sql.includes('yahoo_symbol_aliases')?{get:async key=>aliases.has(key)?{yahoo_symbol:aliases.get(key)}:undefined,run:async(key,symbol)=>aliases.set(key,symbol)}:{get:async key=>cache.get(key),run:async(key,data_json,fetched_at)=>cache.set(key,{data_json,fetched_at})}};
  const service=createYahooPrices({db,yf,now:()=>now});
  await Promise.all([service.fetchStock(stock),service.fetchStock(stock)]);assert.equal(calls,1);
- assert.equal(TTL,30*60*1000);assert.ok(cache.has('RELIANCE.NS'));assert.ok(!cache.has('NSE:RELIANCE'));
+ assert.equal(TTL,5*60*1000);assert.ok(cache.has('RELIANCE.NS'));assert.ok(!cache.has('NSE:RELIANCE'));
  await service.fetchStock({...stock,yahoo_finance_code:'RELIANCE.NS'});assert.equal(calls,1);
  await service.readStock(stock);assert.equal(calls,1);
  now+=TTL-1;await createYahooPrices({db,yf,now:()=>now}).fetchStock(stock);assert.equal(calls,1);

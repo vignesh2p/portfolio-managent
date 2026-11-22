@@ -9,7 +9,7 @@ request. It is persisted in the shared quote cache and stock universe. Missing
 or non-finite values remain null; forward P/E is not substituted. Older cache
 entries gain PE during their next normal market-hours refresh.
 
-All users share a persistent 30-minute quote cache, keyed by resolved Yahoo symbol.
+All users share a persistent 5-minute quote cache, keyed by resolved Yahoo symbol.
 NSE codes map to .NS; BOM/BSE codes map to .BO. Numeric BSE identifiers are
 resolved only with exact normalized company names on the correct exchange.
 Missing or ambiguous codes remain errors rather than guessed mappings.
