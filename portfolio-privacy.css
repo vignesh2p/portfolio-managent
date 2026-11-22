@@ -1,0 +1,7 @@
+.portfolio-privacy-toolbar { display:flex; justify-content:flex-end; margin-bottom:12px; }
+#privacy-toggle { display:inline-flex; align-items:center; gap:8px; min-height:44px; }
+#privacy-toggle:focus-visible { outline:2px solid #00ffb4; outline-offset:3px; }
+.privacy-eye-slash, .privacy-chart-note { display:none; }
+.amounts-hidden .privacy-eye-slash, .amounts-hidden .privacy-chart-note { display:block; }
+.amounts-hidden .history-chart svg { display:none; }
+.privacy-chart-note { padding:40px 16px; text-align:center; color:#aab4c8; }

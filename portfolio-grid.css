@@ -1,0 +1,41 @@
+.portfolio-grid { border:1px solid #2b3a45; border-radius:12px; overflow:hidden; background:#0e171e; }
+.grid-toolbar,.grid-footer { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; padding:16px; background:#131f28; }
+.grid-search { display:flex; align-items:center; gap:12px; font-size:12px; color:#b9c6d2; }
+.grid-search input,.grid-paging select,.grid-filter-dialog input,.grid-filter-dialog select { font:inherit; padding:10px 12px; border:1px solid #435767; border-radius:6px; color:#eef4f8; background:#0a141c; min-width:0; }
+.grid-search input { width:240px; }
+.grid-note { color:#9aafbf; padding:12px 16px; margin:0; font-size:11px; }
+.grid-scroll { overflow:auto; max-height:650px; }
+.holdings-grid { width:100%; min-width:1320px; border-collapse:separate; border-spacing:0; font-size:13px; font-variant-numeric:tabular-nums; }
+.holdings-grid th,.holdings-grid td { padding:15px 14px; border-bottom:1px solid #273642; border-right:1px solid #273642; text-align:right; white-space:nowrap; }
+.holdings-grid thead th { position:sticky; top:0; z-index:2; background:#1b2b37; padding:6px; }
+.holdings-grid tbody th { text-align:left; position:sticky; left:0; z-index:1; background:#101b23; min-width:200px; max-width:260px; white-space:normal; }
+.holdings-grid thead th:first-child { left:0; z-index:3; }
+.holdings-grid tbody tr:nth-child(even) { background:#13212b; }
+.holdings-grid tbody tr:hover td,.holdings-grid tbody tr:hover th { background:#1c303d; }
+.holdings-grid [hidden] { display:none!important; }
+.grid-heading { display:flex; align-items:center; justify-content:space-between; gap:3px; }
+.portfolio-grid button,.grid-filter-dialog button { color:inherit; font:inherit; cursor:pointer; }
+.grid-heading button { border:0; background:transparent; min-height:40px; padding:8px; display:inline-flex; align-items:center; gap:8px; font-weight:600; white-space:nowrap; }
+.grid-heading button:hover,.grid-heading .active { background:#244a4b; color:#00ffb4; border-radius:5px; }
+.grid-sort-icon::after { content:'↕'; color:#a6b9c8; }
+[aria-sort=ascending] .grid-sort-icon::after { content:'↑'; color:#00ffb4; }
+[aria-sort=descending] .grid-sort-icon::after { content:'↓'; color:#00ffb4; }
+.grid-stock { padding:0; background:none; border:0; color:#5fe0c3!important; font-weight:700!important; text-align:left; }
+.grid-stock:hover { text-decoration:underline; }
+.holdings-grid .ph-name { margin-top:6px; line-height:1.5; color:#b0c0ce; }
+.grid-footer { font-size:11px; color:#bbcad5; }
+.grid-paging { display:flex; align-items:center; flex-wrap:wrap; gap:12px; }
+.grid-paging button,.grid-filter-dialog button { min-height:36px; padding:8px 12px; border:1px solid #435767; border-radius:6px; background:#142630; }
+.grid-paging button:disabled { opacity:.4; cursor:default; }
+.portfolio-grid :focus-visible,.grid-filter-dialog :focus-visible { outline:2px solid #00ffb4; outline-offset:2px; }
+.grid-filter-dialog { width:min(360px,calc(100vw - 32px)); padding:20px; margin:auto; max-height:85vh; overflow:auto; border:1px solid #435767; border-radius:12px; color:#edf4fa; background:#14212c; box-shadow:0 20px 60px #0009; font-family:inherit; }
+.grid-filter-dialog::backdrop { background:#0007; }
+.grid-filter-dialog label { display:flex; flex-direction:column; gap:7px; font-size:12px; margin:12px 0; }
+.grid-dialog-heading,.grid-dialog-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.grid-dialog-heading h3 { margin:0; font-size:16px; }
+.grid-rule { border-top:1px solid #354756; margin-top:14px; padding-top:3px; }
+.grid-dialog-actions { margin-top:20px; }
+.grid-filter-dialog .filter-apply { background:#00d59a; color:#041b18; font-weight:bold; }
+#filter-add { margin-top:14px; }
+.grid-sr { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+@media(max-width:600px){ .grid-search { width:100%; flex-direction:column; align-items:stretch; gap:8px; } .grid-search input { width:100%; box-sizing:border-box; } .grid-footer { align-items:flex-start; } .holdings-grid tbody th { min-width:145px; max-width:180px; } }

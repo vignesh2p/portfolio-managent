@@ -68,6 +68,18 @@ const upload     = multer({ storage: multer.memoryStorage(), limits: { fileSize:
 app.use(cors());
 app.use(express.json({ limit: "5mb" }));
 // Explicit reads let the serverless bundler include these shared UI assets.
+const appTableGridJs=fs.readFileSync(path.join(__dirname,'app-table-grid.js'),'utf8');
+const appTableGridCss=fs.readFileSync(path.join(__dirname,'app-table-grid.css'),'utf8');
+app.get('/app-table-grid.js',(req,res)=>res.set('Cache-Control','no-cache').type('js').send(appTableGridJs));
+app.get('/app-table-grid.css',(req,res)=>res.set('Cache-Control','no-cache').type('css').send(appTableGridCss));
+const portfolioGridJs=fs.readFileSync(path.join(__dirname,'portfolio-grid.js'),'utf8');
+const portfolioGridCss=fs.readFileSync(path.join(__dirname,'portfolio-grid.css'),'utf8');
+app.get('/portfolio-grid.js',(req,res)=>res.set('Cache-Control','no-cache').type('js').send(portfolioGridJs));
+app.get('/portfolio-grid.css',(req,res)=>res.set('Cache-Control','no-cache').type('css').send(portfolioGridCss));
+const privacyUi=fs.readFileSync(path.join(__dirname,'portfolio-privacy.js'),'utf8');
+const privacyCss=fs.readFileSync(path.join(__dirname,'portfolio-privacy.css'),'utf8');
+app.get('/portfolio-privacy.js',(req,res)=>res.set('Cache-Control','no-cache').type('js').send(privacyUi));
+app.get('/portfolio-privacy.css',(req,res)=>res.set('Cache-Control','no-cache').type('css').send(privacyCss));
 const historyUi=fs.readFileSync(path.join(__dirname,'portfolio-history-ui.js'),'utf8');
 const historyCss=fs.readFileSync(path.join(__dirname,'portfolio-history.css'),'utf8');
 app.get('/portfolio-history-ui.js',(req,res)=>res.type('js').send(historyUi));
@@ -1078,8 +1090,16 @@ app.get("/api/portfolio", auth, async (req, res) => {
     return {...h,tradeCount:trades.length,trades};
   });
   const now=new Date();
-  const performance=leaderboard([{id:uid}],holdings,portfolioTrades,await namedWatchlists.universe(),xirr,matchPriceStock,now)[0];
-  res.set('Cache-Control','no-store').json({ success:true, data:{ holdings: withTrades, xirr_eligible:xirrEligible(portfolioTrades,true,now), xirr_pct:performance.xirr_pct, xirr_status:performance.status } });
+  const stocks=await namedWatchlists.universe();
+  const prices=Object.fromEntries(holdings.map(h=>{
+    const quote=matchPriceStock(h,stocks),price=Number(quote?.price??quote?.cmp);
+    return [h.ticker,Number.isFinite(price)&&price>0?{
+      price,name:quote.name,ath:quote.ath,change:quote.change,changePct:quote.changePct,
+      prevClose:quote.prevClose,stale:quote.stale,quote_fetched_at:quote.quote_fetched_at
+    }:null];
+  }));
+  const performance=leaderboard([{id:uid}],holdings,portfolioTrades,stocks,xirr,matchPriceStock,now)[0];
+  res.set('Cache-Control','no-store').json({ success:true, data:{ holdings: withTrades, prices, xirr_eligible:xirrEligible(portfolioTrades,true,now), xirr_pct:performance.xirr_pct, xirr_status:performance.status } });
 });
 
 // GET /api/portfolio/:ticker/xirr
