@@ -43,4 +43,4 @@ available. A refresh already started in the closing minute may finish afterward.
 
 An external scheduler can also call the same authenticated endpoint on the same
 IST schedule. Allow at least 120 seconds and retry server errors. All callers
-share the database-backed refresh lease and 15-minute quote cache.
+share the database-backed refresh lease and 5-minute quote cache.

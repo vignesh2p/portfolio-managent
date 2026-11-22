@@ -566,7 +566,7 @@ input,button,select{font-family:'DM Mono',monospace}
     <!-- WATCHLIST TAB -->
     <div id="tab-watchlist" class="page">
       <div class="page-title">Watchlist</div>
-      <div class="page-sub">Prices use a shared 30-minute Yahoo Finance cache. Historical ATH is checked daily. Saved prices load immediately while updates run in the background.</div>
+      <div class="page-sub">Prices use a shared 5-minute Yahoo Finance cache. Historical ATH is checked daily. Saved prices load immediately while updates run in the background.</div>
       <div class="sheet-toolbar">
         <div id="watchlist-meta" class="sheet-meta">Ready to load.</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -1738,7 +1738,7 @@ async function loadPortfolio(){
     const oldest=times.length?new Date(Math.min(...times)).toLocaleString('en-IN'):null;
     const stale=quotes.some(q=>q.stale);
     document.getElementById('price-status').textContent=
-      `${loaded}/${tickers.length} saved prices loaded${failed?` · ${failed} unavailable`:''} · Yahoo Finance${oldest?` · Oldest update: ${oldest}`:''}${stale?' · Some prices are older than 30 minutes':''}`;
+      `${loaded}/${tickers.length} saved prices loaded${failed?` · ${failed} unavailable`:''} · Yahoo Finance${oldest?` · Oldest update: ${oldest}`:''}${stale?' · Some prices are at least 5 minutes old':''}`;
   },300);
 }
 
