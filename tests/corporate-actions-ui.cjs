@@ -5,7 +5,7 @@ const root=path.join(__dirname,'..');
  const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
  try{for(const width of [390,1440]){
   const page=await browser.newPage({viewport:{width,height:1000}}),errors=[],decisions=[];
-  const actions=[{id:1,ticker:'ABC.NS',holding_ticker:'ABC',kind:'bonus',ex_date:'2026-02-01',numerator:1,denominator:1,source:'Admin',description:'Verified 1:1 bonus',from_date:'2025-06-01',status:'pending',plan:{eligible_shares:80,additional_shares:80,resulting_shares:170,fingerprint:'abc'}},{id:2,ticker:'OLD.NS',holding_ticker:'OLD',kind:'split',ex_date:'2025-01-01',numerator:2,denominator:1,source:'Admin',description:'Historic action',from_date:'2024-06-01',status:'read',plan:{}}];
+  const actions=[{id:1,ticker:'ABC.NS',holding_ticker:'ABC',stock_name:'ABC Industries',kind:'bonus',ex_date:'2026-02-01',numerator:1,denominator:1,source:'Admin',description:'Verified 1:1 bonus',from_date:'2025-06-01',status:'pending',plan:{eligible_shares:80,additional_shares:80,resulting_shares:170,fingerprint:'abc'}},{id:2,ticker:'OLD.NS',holding_ticker:'OLD',kind:'split',ex_date:'2025-01-01',numerator:2,denominator:1,source:'Admin',description:'Historic action',from_date:'2024-06-01',status:'read',plan:{}}];
   page.on('pageerror',e=>errors.push(e.stack));
   await page.route('**/*',async route=>{
    const u=new URL(route.request().url());if(u.hostname!=='onepiece.test')return route.abort();
@@ -26,7 +26,8 @@ const root=path.join(__dirname,'..');
   if(width<921)await page.locator('#navigation-toggle').click();
   await page.getByRole('button',{name:/Corporate Actions/}).click();await page.getByText('1 awaiting your decision').waitFor();
   assert.equal(await page.locator('#corporate-actions-count').innerText(),'1');
-  await page.getByRole('button',{name:'Review action',exact:true}).click();await page.getByText(/Shares held before ex-date/).waitFor();
+  assert.match(await page.locator('#ca-list').innerText(),/ABC Industries/);
+  await page.getByRole('button',{name:'Review action',exact:true}).click();await page.getByText(/Shares held before ex-date/).waitFor();assert.match(await page.locator('#ca-preview h3').innerText(),/ABC Industries/);
   await page.getByRole('button',{name:'Apply to holding',exact:true}).click();assert.equal(decisions.length,0);
   await page.getByRole('checkbox').check();await page.getByRole('button',{name:'Apply to holding',exact:true}).click();
   await page.getByText('Action applied. Your holdings and trades have been updated.').waitFor();assert.equal(decisions[0].decision,'apply');assert.equal(await page.locator('#corporate-actions-count').isVisible(),false);
@@ -37,6 +38,7 @@ const root=path.join(__dirname,'..');
   await page.screenshot({path:path.join(root,'test-artifacts',`corporate-actions-${width}.png`),fullPage:true});
   await page.evaluate(()=>{localStorage.setItem('pf_admin_token','test');localStorage.setItem('pf_admin_user',JSON.stringify({name:'Admin'}));});
   await page.goto('https://onepiece.test/admin.html');await page.getByRole('button',{name:/Corporate actions.*Open/}).click();
+  assert.match(await page.locator('.ca-admin table').innerText(),/ABC Industries/);
   await page.locator('[name="ticker"]').fill('TEST.NS');await page.locator('[name="kind"]').selectOption('bonus');await page.locator('[name="ex_date"]').fill('2027-01-01');await page.locator('[name="numerator"]').fill('1');await page.locator('[name="denominator"]').fill('1');
   await page.getByRole('button',{name:'Save corporate action'}).click();await page.getByText(/Saved. Eligible users/).waitFor();assert.equal(decisions[2].ticker,'TEST.NS');
   assert.deepEqual(errors,[]);await page.close();

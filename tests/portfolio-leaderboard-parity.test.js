@@ -31,11 +31,13 @@ test('portfolio and leaderboard use legacy current-holdings XIRR and exclude clo
  }
  assert.ok(Number.isFinite((await check()).xirr_pct));
  assert.equal(body.data.holdings[0].trades.length,1);
+ assert.equal(body.data.prices.OPEN.price,120);
  const omitted=leaderboard([{id:1}],holdings,trades.filter(t=>t.ticker==='OPEN'),stocks,solver.xirr,matchStock,fixed)[0];
  assert.equal(body.data.xirr_pct,omitted.xirr_pct);
  const expected=solver.xirr([{amount:-1000,date:new Date('2024-02-01')},{amount:1800,date:fixed}]);
  assert.equal(body.data.xirr_pct,expected);
  stocks=[];assert.equal((await check()).xirr_pct,null);
+ assert.equal(body.data.prices.OPEN,null);
  holdings=[];trades.pop();
  assert.equal((await check()).xirr_pct,null);
  assert.equal(body.data.holdings.length,0);

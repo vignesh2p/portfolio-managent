@@ -1,4 +1,7 @@
+const {createDatabaseUsage}=require('./database-usage');
 const athAgeSetting=require('./ath-age-settings');
+const replacementAthAgeSetting=require('./replacement-ath-age-settings');
+const userSettings=require('./user-settings');
 const growthTarget=require('./growth-target');
 const portfolioHistory=require('./portfolio-history');
 const userActivity=require('./user-activity');
@@ -101,6 +104,8 @@ const rebalancingJs=fs.readFileSync(path.join(__dirname,'rebalancing-ui.js'),'ut
 app.get('/rebalancing-ui.js',(req,res)=>res.set('Cache-Control','no-cache').type('js').send(rebalancingJs));
 const userActivityJs=fs.readFileSync(path.join(__dirname,'user-activity-client.js'),'utf8');
 app.get('/user-activity-client.js',(req,res)=>res.set('Cache-Control','no-cache').type('js').send(userActivityJs));
+const databaseUsageUi=fs.readFileSync(path.join(__dirname,'admin-database-usage.js'),'utf8');
+app.get('/admin-database-usage.js',(req,res)=>res.type('js').send(databaseUsageUi));
 const adminActivityJs=fs.readFileSync(path.join(__dirname,'admin-activity.js'),'utf8');
 app.get('/admin-activity.js',(req,res)=>res.set('Cache-Control','no-cache').type('js').send(adminActivityJs));
 const adminPriceRefreshJs=fs.readFileSync(path.join(__dirname,'admin-price-refresh.js'),'utf8');
@@ -248,6 +253,7 @@ dbReady = (async () => {
     rebalancing.schema,
     growthTarget.schema,
     athAgeSetting.schema,
+    replacementAthAgeSetting.schema,
     ...userActivity.schema,
     `CREATE TABLE IF NOT EXISTS users (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -377,6 +383,17 @@ const growthTargets=growthTarget.createGrowthTargets(db);
 growthTargets.register(app,auth);
 const athAgeSettings=athAgeSetting.createAthAgeSettings(db);
 athAgeSettings.register(app,auth);
+const replacementAthAgeSettings=replacementAthAgeSetting.createReplacementAthAgeSettings(db);
+replacementAthAgeSettings.register(app,auth);
+userSettings.register(app,{
+ auth,transaction:async fn=>{await dbReady;return transactionRaw(fn);},
+ read:async uid=>{
+  const [target_growth_pct,ath_age_days,replacement_ath_age_days,sip]=await Promise.all([
+   growthTargets.get(uid),athAgeSettings.get(uid),replacementAthAgeSettings.get(uid),getOrSeedSIP(uid)
+  ]);
+  return {target_growth_pct,ath_age_days,replacement_ath_age_days,max_budget:sip.max_budget,levels:JSON.parse(sip.levels)};
+ }
+});
 const resultsService=quarterlyResults.createQuarterlyResults({yf:yahooClient,db});
 app.get('/api/results/search',auth,async(req,res)=>{
  try{res.set('Cache-Control','no-store').json({success:true,data:await resultsService.search(req.query.q)});}
@@ -640,7 +657,7 @@ async function universeStock(ticker){
 }
 async function fetchPrice(ticker){return yahooPrices.readStock(await universeStock(ticker));}
 async function fetchPriceFromWatchlistTable(ticker){return fetchPrice(ticker);}
-async function refreshYahooUniverse({force=false,scheduled=false,after=''}={}){
+async function refreshYahooUniverse({force=false,after=''}={}){
   const systemId=await getOnepieceSystemUserId();
   const stocks=force
     ?await db.prepare('SELECT ticker,stock_code,yahoo_finance_code,code,name FROM watchlist WHERE user_id=? AND ticker>? ORDER BY ticker LIMIT 12').all(systemId,after)
@@ -652,7 +669,7 @@ async function refreshYahooUniverse({force=false,scheduled=false,after=''}={}){
       const stock=stocks[index++];let data;
       try{
         if(Date.now()>deadline){failed++;errors.push({ticker:stock.ticker,error:'Refresh time limit reached; retry this stock.'});continue;}
-        data=await yahooPrices.fetchStock(stock,{force:force||scheduled});
+        data=await yahooPrices.fetchStock(stock,{force});
         if(data.stale)throw new Error(data.quote_error||'Provider returned saved data instead of a fresh quote.');
         await db.prepare('UPDATE watchlist SET cmp=?,pe=?,change=?,ath=?,ath_date=?,price_as_of=?,quote_fetched_at=?,quote_error=?,source=? WHERE user_id=? AND ticker=? AND yahoo_finance_code=?').run(data.price,data.pe??null,data.change,data.ath,data.ath_date,data.price_as_of,data.quote_fetched_at,data.quote_error||null,'YAHOO_FINANCE',systemId,stock.ticker,stock.yahoo_finance_code);
         await syncBetaCyclesForQuote(stock,data);
@@ -1004,7 +1021,7 @@ app.post('/api/prices/refresh',auth,async(req,res)=>{
 const dailyPortfolioHistory=portfolioHistory.createHistory({db,transaction:async fn=>{await dbReady;return transactionRaw(fn);},universe:()=>namedWatchlists.universe(),matchStock:matchPriceStock,refresh:coordinatedPriceRefresh,systemEmail:ONEPIECE_SYSTEM_EMAIL});
 app.get('/api/portfolio-history',auth,dailyPortfolioHistory.history);
 app.get('/api/cron/portfolio-history',dailyPortfolioHistory.cron);
-app.get("/api/cron/watchlist", createWatchlistCronHandler({db,sync:()=>coordinatedPriceRefresh({scheduled:true})}));
+app.get("/api/cron/watchlist", createWatchlistCronHandler({db,sync:coordinatedPriceRefresh}));
 
 app.post("/api/watchlist/sync", auth, async (req, res) => {
   try {
@@ -1141,9 +1158,9 @@ app.get('/api/admin/activity',adminAuth,async(req,res)=>{
 });
 
 async function rebalanceContext(uid,ticker){
- const [holdings,stocks,trades,targetGrowth,athAgeDays]=await Promise.all([
+ const [holdings,stocks,trades,targetGrowth,athAgeDays,replacementAthAgeDays]=await Promise.all([
   db.prepare('SELECT * FROM portfolio WHERE user_id=? AND shares>0').all(uid),namedWatchlists.universe(),
-  db.prepare('SELECT * FROM trade_history WHERE user_id=? ORDER BY traded_at,id').all(uid),growthTargets.get(uid),athAgeSettings.get(uid)
+  db.prepare('SELECT * FROM trade_history WHERE user_id=? ORDER BY traded_at,id').all(uid),growthTargets.get(uid),athAgeSettings.get(uid),replacementAthAgeSettings.get(uid)
  ]);
  const allowed=new Set(stocks.filter(s=>Number(s.in_default_watchlist)!==0).map(s=>s.ticker));
  const members=await db.prepare('SELECT i.ticker FROM user_watchlist_items i JOIN user_watchlists l ON l.id=i.watchlist_id WHERE l.user_id=?').all(uid);
@@ -1155,11 +1172,11 @@ async function rebalanceContext(uid,ticker){
  const sources=rebalancing.sourceRows(measured,stocks,matchPriceStock,undefined,targetGrowth,athAgeDays);
  const source=sources.find(s=>s.ticker===ticker);
  const beta=source?await loadOpportunityData(uid,{mode:'beta'},stocks.filter(s=>allowed.has(s.ticker))):null;
- const candidates=source?rebalancing.betaCandidates(beta.rows,stocks,holdings,source,matchPriceStock):[];
- return {sources,source,candidates,targetGrowth,athAgeDays};
+ const candidates=source?rebalancing.betaCandidates(beta.rows,stocks,holdings,source,matchPriceStock,undefined,replacementAthAgeDays):[];
+ return {sources,source,candidates,targetGrowth,athAgeDays,replacementAthAgeDays};
 }
 app.get('/api/rebalancing',auth,async(req,res)=>{
- try{const context=await rebalanceContext(req.user.id,req.query.ticker);res.set('Cache-Control','no-store').json({success:true,data:{target_growth_pct:context.targetGrowth,ath_age_days:context.athAgeDays,sources:context.sources,source:context.source||null,candidates:context.candidates,opportunities:rebalancing.opportunityGroups(context.candidates,context.source?.market_value),combinations:context.source?rebalancing.combinations(context.candidates,context.source.market_value):[],date:rebalancing.indiaDate()}});}
+ try{const context=await rebalanceContext(req.user.id,req.query.ticker);res.set('Cache-Control','no-store').json({success:true,data:{target_growth_pct:context.targetGrowth,ath_age_days:context.athAgeDays,replacement_ath_age_days:context.replacementAthAgeDays,sources:context.sources,source:context.source||null,candidates:context.candidates,opportunities:rebalancing.opportunityGroups(context.candidates,context.source?.market_value),combinations:context.source?rebalancing.combinations(context.candidates,context.source.market_value):[],date:rebalancing.indiaDate()}});}
  catch(e){res.status(e.status||500).json({success:false,error:e.message});}
 });
 app.post('/api/rebalancing',auth,async(req,res)=>{
@@ -1570,6 +1587,8 @@ app.get("/api/admin/tables", adminAuth, async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+createDatabaseUsage({db,systemEmail:ONEPIECE_SYSTEM_EMAIL}).register(app,adminAuth);
 
 app.get("/api/admin/debug/db", adminAuth, async (req, res) => {
   try {

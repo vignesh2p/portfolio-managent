@@ -558,7 +558,7 @@ input,button,select{font-family:'DM Mono',monospace}
     <!-- WATCHLIST TAB -->
     <div id="tab-watchlist" class="page">
       <div class="page-title">Watchlist</div>
-      <div class="page-sub">Prices use a shared 5-minute Yahoo Finance cache. Historical ATH is checked daily. Saved prices load immediately while updates run in the background.</div>
+      <div class="page-sub">Prices use a shared 30-minute Yahoo Finance cache. Historical ATH is checked daily. Saved prices load immediately while updates run in the background.</div>
       <div class="sheet-toolbar">
         <div id="watchlist-meta" class="sheet-meta">Ready to load.</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -636,35 +636,31 @@ input,button,select{font-family:'DM Mono',monospace}
         <button type="button" id="settings-tab-override" role="tab" aria-selected="false" aria-controls="settings-override" tabindex="-1" onclick="switchSettingsView('override')" onkeydown="onSettingsTabKey(event,'override')">Stock Allocation Override</button>
       </div>
       <div id="settings-strategy" role="tabpanel" aria-labelledby="settings-tab-strategy">
-      <form class="settings-card" id="growth-target-form" onsubmit="event.preventDefault();saveGrowthTarget()">
-        <label class="settings-label" for="set-target-growth">Target Growth (% per year)</label>
-        <input class="settings-input" id="set-target-growth" name="target_growth_pct" type="number" min="0" max="1000" step="any" required value="30" aria-describedby="growth-target-hint">
-        <p id="growth-target-hint" class="settings-hint">Your annual portfolio growth target. Rebalance Losers includes holdings with an ATH older than your configured ATH age and XIRR below this target. Default: 30%.</p>
-        <button type="submit" id="save-growth-target" class="save-btn">Save Target Growth</button>
-        <p id="growth-target-message" role="status"></p>
-      </form>
-      <form class="settings-card" id="ath-age-form" aria-label="Rebalance ATH age" onsubmit="event.preventDefault();saveAthAge()">
-        <label class="settings-label" for="set-ath-age">Rebalance ATH Age (days)</label>
-        <input class="settings-input" id="set-ath-age" name="ath_age_days" type="number" min="0" max="9007199254740991" step="1" required value="365" aria-describedby="ath-age-hint">
-        <p id="ath-age-hint" class="settings-hint">Current rebalance includes holdings whose ATH was more than this many days ago and whose XIRR is below your growth target. Holdings without XIRR are excluded. Default: 365 days.</p>
-        <button type="submit" id="save-ath-age" class="save-btn">Save ATH Age</button>
-        <p id="ath-age-message" role="status"></p>
-      </form>
-      <form id="sip-config-form" action="/api/sip-config" method="post" onsubmit="event.preventDefault();saveSIPConfig()">
-      <div class="settings-card">
-        <label class="settings-label" for="set-budget">Allocation per stock</label>
-        <input id="set-budget" name="max_budget" class="settings-input" type="number" min="0.01" step="any" required value="50000" oninput="updateSIPTotals()"/>
-        <div class="settings-hint">Amounts scale proportionally across your configured levels</div>
-      </div>
+      <form id="sip-config-form" action="/api/user-settings" method="post" aria-label="User settings" onsubmit="event.preventDefault();saveSIPConfig()">
+      <fieldset id="user-settings-fields" disabled style="border:0;padding:0;margin:0;min-width:0">
+        <legend class="settings-label">User settings</legend>
+        <p class="settings-hint">All values are required. Save settings applies these values and the strategy breakdown together.</p>
+        <table id="user-settings-table" class="sip-config-table">
+          <caption class="grid-sr">User settings</caption>
+          <thead><tr><th scope="col">Setting</th><th scope="col">Value</th></tr></thead>
+          <tbody>
+            <tr><th scope="row"><label for="set-target-growth">Target Growth (% per year)</label><p id="growth-target-hint" class="settings-hint">Annual XIRR target for rebalancing. Default: 30%.</p></th><td><input class="settings-input" id="set-target-growth" name="target_growth_pct" type="number" min="0" max="1000" step="any" required value="30" aria-describedby="growth-target-hint"></td></tr>
+            <tr><th scope="row"><label for="set-ath-age">Rebalance ATH Age (days)</label><p id="ath-age-hint" class="settings-hint">Holdings must have an ATH older than this age and XIRR below your target. Default: 365 days.</p></th><td><input class="settings-input" id="set-ath-age" name="ath_age_days" type="number" min="0" max="9007199254740991" step="1" required value="365" aria-describedby="ath-age-hint"></td></tr>
+            <tr><th scope="row"><label for="set-replacement-ath-age">Rebalance Replacement ATH Age Limit (days)</label><p id="replacement-ath-age-hint" class="settings-hint">Replacement stocks in both rebalance tabs must have fewer days since ATH than this limit. Default: 100 days.</p></th><td><input class="settings-input" id="set-replacement-ath-age" name="replacement_ath_age_days" type="number" min="1" max="9007199254740991" step="1" required value="100" aria-describedby="replacement-ath-age-hint"></td></tr>
+            <tr><th scope="row"><label for="set-budget">Allocation per stock</label><p id="stock-allocation-hint" class="settings-hint">Default budget per stock. The strategy below divides this amount across SIP levels. Individual stock overrides still apply.</p></th><td><input data-private-input id="set-budget" name="max_budget" class="settings-input" type="number" min="0.01" step="any" required value="50000" aria-describedby="stock-allocation-hint" oninput="updateSIPTotals()"></td></tr>
+          </tbody>
+        </table>
       <div class="settings-card">
         <div class="settings-label" style="display:block;margin-bottom:16px">Strategy Breakdown</div>
         <div id="settings-breakdown" style="overflow-x:auto"></div>
         <button type="button" id="add-sip-level" class="preview-btn" onclick="addSIPLevel()">Add level</button>
         <p class="settings-hint" id="sip-config-hint">Add or remove levels as needed. Enter negative fall percentages from smallest drop to largest, without duplicates. Allocations must total 100%. Each zone ends where the next begins; the final zone includes all deeper drops.</p>
         <p id="sip-allocation-total" role="status" style="margin-top:12px"></p>
-        <button class="save-btn" id="save-sip-config" type="submit">Save Config</button>
+        <button class="save-btn" id="save-sip-config" type="submit">Save settings</button>
       </div>
-      <div id="settings-msg" role="alert" tabindex="-1" style="font-size:12px;color:#00ffb4;margin-top:10px;display:none"></div>
+      </fieldset>
+      <button type="button" id="retry-user-settings" class="preview-btn" onclick="loadSettings()" hidden>Retry loading settings</button>
+      <div id="settings-msg" role="status" tabindex="-1" style="font-size:12px;color:#00ffb4;margin-top:10px;display:none"></div>
       </form>
       </div>
       <div id="settings-override" role="tabpanel" aria-labelledby="settings-tab-override" hidden>
@@ -672,7 +668,7 @@ input,button,select{font-family:'DM Mono',monospace}
         <label for="stock-budget-select" class="settings-label">Stock allocation override</label>
         <select id="stock-budget-select" class="form-input" required onchange="showStockBudget()"></select>
         <label for="stock-budget-amount" class="settings-label">Allocation per stock</label>
-        <input id="stock-budget-amount" class="settings-input" type="number" min="0.01" step="any" required>
+        <input data-private-input id="stock-budget-amount" class="settings-input" type="number" min="0.01" step="any" required>
         <p class="settings-hint">Overrides the default budget for this stock in both Opportunities tabs. Your allocation percentages stay the same.</p>
         <button class="save-btn" type="submit">Save stock budget</button>
         <button class="preview-btn" type="button" onclick="saveStockBudget(true)">Use default budget</button>
@@ -792,7 +788,8 @@ async function api(path, opts={}) {
   const r=await fetch(BASE+path,{headers,...opts});
   const text=await r.text();
   let j;
-  try { j=text?JSON.parse(text):{}; }
+  // Price freshness is shown once in the shared banner; retain actual quote errors.
+  try { j=text?JSON.parse(text,(key,value)=>key==='quote_error'&&value==='Cached Yahoo price is older than 30 minutes; refresh pending.'?null:value):{}; }
   catch { j={ success:false, error:(text||`HTTP ${r.status}`).slice(0,220) }; }
   if(j.code==='ACCOUNT_UNAVAILABLE'){
     accountUnavailable=true;TOKEN=null;USERINFO=null;localStorage.removeItem('pf_token');localStorage.removeItem('pf_user');clearInterval(priceCacheTimer);
@@ -808,7 +805,8 @@ async function adminApi(path, opts={}) {
   const r=await fetch(BASE+path,{headers,...opts});
   const text=await r.text();
   let j;
-  try { j=text?JSON.parse(text):{}; }
+  // Price freshness is shown once in the shared banner; retain actual quote errors.
+  try { j=text?JSON.parse(text,(key,value)=>key==='quote_error'&&value==='Cached Yahoo price is older than 30 minutes; refresh pending.'?null:value):{}; }
   catch { j={ success:false, error:(text||`HTTP ${r.status}`).slice(0,220) }; }
   if(r.status===401 || r.status===403){doAdminLogout();return j;}
   if(!j.success && !j.error) j.error=`HTTP ${r.status}`;
@@ -2238,39 +2236,32 @@ function onSettingsTabKey(event,view){
  if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
  event.preventDefault();const next=event.key==='Home'?'strategy':event.key==='End'?'override':view==='strategy'?'override':'strategy';switchSettingsView(next);document.getElementById('settings-tab-'+next).focus();
 }
-async function loadGrowthTarget(){
- const button=document.getElementById('save-growth-target'),message=document.getElementById('growth-target-message');button.disabled=true;message.textContent='Loading target…';
- try{const result=await api('/api/growth-target');if(!result.success)throw Error(result.error);document.getElementById('set-target-growth').value=result.data.target_growth_pct??30;message.textContent='';}
- catch(error){message.textContent=error.message||'Unable to load target growth.';}
- finally{button.disabled=false;}
-}
-async function saveGrowthTarget(){
- const form=document.getElementById('growth-target-form');if(!form.reportValidity())return;
- const button=document.getElementById('save-growth-target'),message=document.getElementById('growth-target-message');button.disabled=true;
- try{const result=await api('/api/growth-target',{method:'PUT',body:JSON.stringify({target_growth_pct:Number(document.getElementById('set-target-growth').value)})});if(!result.success)throw Error(result.error);message.textContent='Target growth saved. Rebalance Losers will use '+result.data.target_growth_pct+'%.';}
- catch(error){message.textContent=error.message||'Unable to save target growth.';}
- finally{button.disabled=false;}
-}
-async function loadAthAge(){
- const button=document.getElementById('save-ath-age'),message=document.getElementById('ath-age-message');button.disabled=true;message.textContent='Loading ATH age…';
- try{const result=await api('/api/ath-age');if(!result.success)throw Error(result.error);document.getElementById('set-ath-age').value=result.data.ath_age_days??365;message.textContent='';}
- catch(error){message.textContent=error.message||'Unable to load ATH age.';}
- finally{button.disabled=false;}
-}
-async function saveAthAge(){
- const form=document.getElementById('ath-age-form');if(!form.reportValidity())return;
- const button=document.getElementById('save-ath-age'),message=document.getElementById('ath-age-message');button.disabled=true;
- try{const result=await api('/api/ath-age',{method:'PUT',body:JSON.stringify({ath_age_days:Number(document.getElementById('set-ath-age').value)})});if(!result.success)throw Error(result.error);message.textContent='ATH age saved. Current rebalance will use more than '+result.data.ath_age_days+' days.';}
- catch(error){message.textContent=error.message||'Unable to save ATH age.';}
- finally{button.disabled=false;}
-}
+let userSettingsLoaded=false,userSettingsSaving=false,userSettingsLoadVersion=0;
 async function loadSettings(){
-  switchSettingsView('strategy');loadGrowthTarget();loadAthAge();
-  const j=await api('/api/sip-config'); if(!j.success) return;
-  sipLevels=j.data.levels;
-  document.getElementById('set-budget').value=j.data.max_budget;
-  refreshSettingsBreakdown();
-  loadStockBudgets();
+  if(userSettingsSaving)return;
+  const version=++userSettingsLoadVersion;
+  switchSettingsView('strategy');
+  const fields=document.getElementById('user-settings-fields'),msg=document.getElementById('settings-msg');
+  userSettingsLoaded=false;fields.disabled=true;
+  document.getElementById('retry-user-settings').hidden=true;
+  msg.style.display='block';msg.style.color='';msg.textContent='Loading settings…';
+  try{
+    const j=await api('/api/user-settings');
+    if(version!==userSettingsLoadVersion)return;
+    if(!j.success)throw Error(j.error||'Unable to load settings.');
+    const data=j.data;
+    document.getElementById('set-target-growth').value=data.target_growth_pct;
+    document.getElementById('set-ath-age').value=data.ath_age_days;
+    document.getElementById('set-replacement-ath-age').value=data.replacement_ath_age_days;
+    document.getElementById('set-budget').value=data.max_budget;
+    sipLevels=data.levels;refreshSettingsBreakdown();
+    userSettingsLoaded=true;fields.disabled=false;msg.textContent='';msg.style.display='none';
+    loadStockBudgets();
+  }catch(error){
+    if(version!==userSettingsLoadVersion)return;
+    msg.style.color='#ff6b6b';msg.textContent=error.message||'Unable to load settings.';
+    document.getElementById('retry-user-settings').hidden=false;
+  }
 }
 function refreshSettingsBreakdown(){
   if(!sipLevels.length) return;
@@ -2307,17 +2298,23 @@ function updateSIPTotals(){
   output.style.color=Math.abs(total-100)<1e-8?'#00ffb4':'#ffd166';
 }
 async function saveSIPConfig(){
-  const msg=document.getElementById('settings-msg');
-  const button=document.getElementById('save-sip-config');
+  if(!userSettingsLoaded||userSettingsSaving)return;
+  const form=document.getElementById('sip-config-form');if(!form.reportValidity())return;
+  const msg=document.getElementById('settings-msg'),fields=document.getElementById('user-settings-fields');
   try{
-    const config=validateSIPConfig({max_budget:Number(document.getElementById('set-budget').value),levels:sipLevels});
-    button.disabled=true;
-    const j=await api('/api/sip-config',{method:'PUT',body:JSON.stringify(config)});
-    if(!j.success)throw new Error(j.error||'Unable to save configuration.');
-    msg.style.color='#00ffb4';msg.style.display='block';msg.textContent='Configuration saved. Both Opportunities tabs will use these levels and allocations.';
+    const config={...validateSIPConfig({max_budget:Number(document.getElementById('set-budget').value),levels:sipLevels}),
+      target_growth_pct:Number(document.getElementById('set-target-growth').value),
+      ath_age_days:Number(document.getElementById('set-ath-age').value),
+      replacement_ath_age_days:Number(document.getElementById('set-replacement-ath-age').value)};
+    userSettingsSaving=true;fields.disabled=true;
+    msg.style.color='';msg.style.display='block';msg.textContent='Saving settings…';
+    const j=await api('/api/user-settings',{method:'PUT',body:JSON.stringify(config)});
+    if(!j.success)throw new Error(j.error||'Unable to save settings.');
+    msg.style.color='#00ffb4';msg.textContent='Settings saved. Rebalancing and both Opportunities tabs will use these values.';
   }catch(error){msg.style.color='#ff6b6b';msg.style.display='block';msg.textContent=error.message;msg.focus();}
-  finally{button.disabled=false;}
+  finally{userSettingsSaving=false;fields.disabled=!userSettingsLoaded;}
 }
+
 </script>
 <dialog id="rebalance-dialog" aria-labelledby="rebalance-title">
   <div class="rebalance-dialog-head"><h2 id="rebalance-title">Rebalance holding</h2><button type="button" id="rebalance-close" class="preview-btn" onclick="document.getElementById('rebalance-dialog').close()" autofocus>Close</button></div>

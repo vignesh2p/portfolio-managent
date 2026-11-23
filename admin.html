@@ -332,10 +332,12 @@
     .page-title{font-size:24px}
     .debug-grid{grid-template-columns:1fr}
   }
-.universe-input{font-size:16px;min-height:48px;min-width:160px;max-width:100%;padding:10px;background:#141c2f;color:#fff;border:1px solid #65718a;border-radius:8px}#universe-search{display:block;width:100%;margin:10px 0}#universe-message{margin:12px 0}#universe-rows tr[hidden]{display:none}#universe-rows tr.yahoo-code-invalid>td{background:#4a1823;color:#ffd5dc}#universe-rows tr.yahoo-code-invalid input[name="yahoo_finance_code"]{border:2px solid #ff647c}.yahoo-validation-note{max-width:300px;margin-top:6px;font-size:12px}#universe-validate-yahoo{margin:8px}</style>
+.universe-input{font-size:16px;min-height:48px;min-width:160px;max-width:100%;padding:10px;background:#141c2f;color:#fff;border:1px solid #65718a;border-radius:8px}#universe-search{display:block;width:100%;margin:10px 0}#universe-message{margin:12px 0}#universe-rows tr[hidden]{display:none}#universe-rows tr.yahoo-code-invalid>td{background:#4a1823;color:#ffd5dc}#universe-rows tr.yahoo-code-invalid input[name="yahoo_finance_code"]{border:2px solid #ff647c}.yahoo-validation-note{max-width:300px;margin-top:6px;font-size:12px}#universe-validate-yahoo{margin:8px}.usage-cards a,.usage-table a{color:var(--info)}#database-usage-search{display:block;width:100%;max-width:420px;min-height:44px;margin:8px 0 16px;padding:10px 12px;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px}.usage-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}.usage-cards h3{font-size:15px}.usage-cards strong{font-size:24px}.usage-cards meter{width:100%;height:20px}.usage-table{max-width:100%;overflow:auto;margin:16px 0}.usage-table caption{text-align:left;padding:12px}.usage-table th,.usage-table td{white-space:nowrap}.usage-table:focus-visible{outline:2px solid #00ffb4}.usage-table details li{padding:5px 0}.usage-table tbody th{position:sticky;left:0;background:#101b24}.usage-table table{min-width:100%}
+</style>
 <link rel="stylesheet" href="/responsive.css">
 <script src="/responsive.js" defer></script>
 <script src="/admin-activity.js" defer></script>
+<script src="/admin-database-usage.js" defer></script>
 <script src="/admin-price-refresh.js" defer></script>
 <script src="/tax-admin-ui.js" defer></script>
 <script src="/corporate-actions-admin.js" defer></script>
@@ -576,7 +578,7 @@ async function fetchJson(path, options) {
   var response = await fetch(BASE + path, Object.assign({ headers: headers }, options));
   var text = await response.text();
   var data = null;
-  try { data = text ? JSON.parse(text) : null; } catch { data = { success: false, error: 'Invalid server response' }; }
+  try { data = text ? JSON.parse(text,(key,value)=>key==='quote_error'&&value==='Cached Yahoo price is older than 30 minutes; refresh pending.'?null:value) : null; } catch { data = { success: false, error: 'Invalid server response' }; }
   if (response.status === 401 || response.status === 403) {
     clearSession(data && data.error || 'Session expired. Please sign in again.');
     throw new Error(data && data.error || 'Unauthorized');
@@ -619,7 +621,7 @@ async function doLogin(event) {
 }
 
 function renderNav() {
-  tableNav.innerHTML = ['User management','User activity','Stocks Config','Corporate actions','Tax settings','Leader board',...TABLES.filter(t=>t!=='users')].map(function (table) {
+  tableNav.innerHTML = ['Database usage','User management','User activity','Stocks Config','Corporate actions','Tax settings','Leader board',...TABLES.filter(t=>t!=='users')].map(function (table) {
     var active = table === currentTable ? 'active' : '';
     var count = tableCounts[table];
     var label = count === void 0 ? 'Open table' : count + ' rows';
@@ -909,6 +911,7 @@ async function loadTable(table) {
   renderNav();
   content.innerHTML = '<div class="panel"><div class="shell-head"><div><div style="' + SYNE_STYLE_MD + '">Loading ' + escapeHtml(table) + '</div><div class="subtle">Fetching schema and rows from the backend...</div></div><span class="chip">Loading</span></div><div class="empty-state">Please wait while the table loads.</div></div>';
   try {
+    if(table==='Database usage'){await loadDatabaseUsage();return;}
     if(table==='User activity'){await loadAdminActivity();return;}
     if(table==='Corporate actions'){await loadCorporateActionsAdmin();return;}
     if(table==='Tax settings'){await loadTaxAdmin();return;}

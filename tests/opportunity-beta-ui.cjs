@@ -6,6 +6,8 @@ const levels=[{fall:-10,allocation:10},{fall:-20,allocation:20},{fall:-30,alloca
 const base=levels.map((l,i)=>({...l,allocated_amount:l.allocation*10,trigger_price:100+l.fall,active:i===1,invested_amount:0,bought_quantity:0}));
 const rows=[100,50,0,150].map((spent,i)=>({ticker:'TEST'+i,name:['Fully used','Partly used','Skipped purchase','Overspent'][i],max_budget:1000,price:80,ath:100,ath_date:'2026-01-01',
  levels:applyOpportunityBeta(base,[{type:'BUY',price:spent,shares:1}],1000,80,100)}));
+rows[0].quote_error='Cached Yahoo price is older than 30 minutes; refresh pending.';
+rows[0].stale=true;rows[1].quote_error='ATH unavailable: provider error';
 (async()=>{
  const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
  try{for(const width of [390,1440]){
@@ -33,6 +35,9 @@ const rows=[100,50,0,150].map((spent,i)=>({ticker:'TEST'+i,name:['Fully used','P
   await page.getByRole('button',{name:'Opportunities Beta',exact:true}).click();
   await page.waitForSelector('#beta-table table');
   assert.equal(await page.locator('#beta-watchlist-controls').isVisible(),false);
+  assert.doesNotMatch(await page.locator('#beta-table').innerText(),/Cached Yahoo price is older/);
+  assert.match(await page.locator('#beta-table').innerText(),/ATH unavailable: provider error/);
+  assert.match(await page.locator('#price-cache-status').innerText(),/Last price updated/);
   const active=page.locator('#beta-table .opportunity-active');
   assert.equal(await active.count(),4);
   for(const [i,amount] of [200,250,300,150].entries()){
