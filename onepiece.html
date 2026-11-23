@@ -558,7 +558,7 @@ input,button,select{font-family:'DM Mono',monospace}
     <!-- WATCHLIST TAB -->
     <div id="tab-watchlist" class="page">
       <div class="page-title">Watchlist</div>
-      <div class="page-sub">Prices use a shared 30-minute Yahoo Finance cache. Historical ATH is checked daily. Saved prices load immediately while updates run in the background.</div>
+      <div class="page-sub">Prices use a shared 5-minute Yahoo Finance cache. Historical ATH is checked daily. Saved prices load immediately while updates run in the background.</div>
       <div class="sheet-toolbar">
         <div id="watchlist-meta" class="sheet-meta">Ready to load.</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -789,7 +789,7 @@ async function api(path, opts={}) {
   const text=await r.text();
   let j;
   // Price freshness is shown once in the shared banner; retain actual quote errors.
-  try { j=text?JSON.parse(text,(key,value)=>key==='quote_error'&&value==='Cached Yahoo price is older than 30 minutes; refresh pending.'?null:value):{}; }
+  try { j=text?JSON.parse(text,(key,value)=>key==='quote_error'&&value==='Cached Yahoo price is older than 5 minutes; refresh pending.'?null:value):{}; }
   catch { j={ success:false, error:(text||`HTTP ${r.status}`).slice(0,220) }; }
   if(j.code==='ACCOUNT_UNAVAILABLE'){
     accountUnavailable=true;TOKEN=null;USERINFO=null;localStorage.removeItem('pf_token');localStorage.removeItem('pf_user');clearInterval(priceCacheTimer);
@@ -806,7 +806,7 @@ async function adminApi(path, opts={}) {
   const text=await r.text();
   let j;
   // Price freshness is shown once in the shared banner; retain actual quote errors.
-  try { j=text?JSON.parse(text,(key,value)=>key==='quote_error'&&value==='Cached Yahoo price is older than 30 minutes; refresh pending.'?null:value):{}; }
+  try { j=text?JSON.parse(text,(key,value)=>key==='quote_error'&&value==='Cached Yahoo price is older than 5 minutes; refresh pending.'?null:value):{}; }
   catch { j={ success:false, error:(text||`HTTP ${r.status}`).slice(0,220) }; }
   if(r.status===401 || r.status===403){doAdminLogout();return j;}
   if(!j.success && !j.error) j.error=`HTTP ${r.status}`;
@@ -965,7 +965,7 @@ function showApp(){
   document.getElementById('user-email-display').textContent=USERINFO?.name||USERINFO?.email||'';
   document.getElementById('t-date').value=new Date().toISOString().substring(0,10);
   if(priceCacheTimer)clearInterval(priceCacheTimer);
-  priceCacheTimer=setInterval(()=>{if(TOKEN)warmSessionPrices();},30*60*1000);
+  priceCacheTimer=setInterval(()=>{if(TOKEN)warmSessionPrices();},5*60*1000);
   loadSettings();
   switchTab('portfolio',document.querySelector(".side-tab[onclick*=portfolio]"));
   warmSessionPrices();

@@ -578,7 +578,7 @@ async function fetchJson(path, options) {
   var response = await fetch(BASE + path, Object.assign({ headers: headers }, options));
   var text = await response.text();
   var data = null;
-  try { data = text ? JSON.parse(text,(key,value)=>key==='quote_error'&&value==='Cached Yahoo price is older than 30 minutes; refresh pending.'?null:value) : null; } catch { data = { success: false, error: 'Invalid server response' }; }
+  try { data = text ? JSON.parse(text,(key,value)=>key==='quote_error'&&value==='Cached Yahoo price is older than 5 minutes; refresh pending.'?null:value) : null; } catch { data = { success: false, error: 'Invalid server response' }; }
   if (response.status === 401 || response.status === 403) {
     clearSession(data && data.error || 'Session expired. Please sign in again.');
     throw new Error(data && data.error || 'Unauthorized');

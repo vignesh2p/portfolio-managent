@@ -1,5 +1,5 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('fs'),vm=require('vm');
-const notice='Cached Yahoo price is older than 30 minutes; refresh pending.';
+const notice='Cached Yahoo price is older than 5 minutes; refresh pending.';
 for(const [name,file,start,end] of [
  ['customer','onepiece.html','async function api(','async function adminApi('],
  ['embedded admin','onepiece.html','async function adminApi(','function showPublicPage('],

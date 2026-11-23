@@ -6,7 +6,7 @@ const levels=[{fall:-10,allocation:10},{fall:-20,allocation:20},{fall:-30,alloca
 const base=levels.map((l,i)=>({...l,allocated_amount:l.allocation*10,trigger_price:100+l.fall,active:i===1,invested_amount:0,bought_quantity:0}));
 const rows=[100,50,0,150].map((spent,i)=>({ticker:'TEST'+i,name:['Fully used','Partly used','Skipped purchase','Overspent'][i],max_budget:1000,price:80,ath:100,ath_date:'2026-01-01',
  levels:applyOpportunityBeta(base,[{type:'BUY',price:spent,shares:1}],1000,80,100)}));
-rows[0].quote_error='Cached Yahoo price is older than 30 minutes; refresh pending.';
+rows[0].quote_error='Cached Yahoo price is older than 5 minutes; refresh pending.';
 rows[0].stale=true;rows[1].quote_error='ATH unavailable: provider error';
 (async()=>{
  const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
