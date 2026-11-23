@@ -1,7 +1,7 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {createSharedPriceRefresh}=require('../shared-price-refresh');
 const {TTL}=require('../yahoo-prices');
-test('different users and server instances share one refresh until the 5-minute window expires',async()=>{
+test('different users and server instances share one refresh until the 30-minute window expires',async()=>{
  let time=Date.parse('2026-10-26T03:30:00Z'),runs=0;const row={lease_until:0,completed_at:0};
  let transactionQueue=Promise.resolve();
  const execute=async query=>{

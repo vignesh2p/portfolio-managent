@@ -84,7 +84,7 @@ function fixture(ticker){
   await page.screenshot({path:path.join(root,'test-artifacts',`quarterly-results-${width}.png`),fullPage:true});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);
   await page.locator('#qr-search').fill('ap');await page.locator('#qr-suggestions [role=option]').first().waitFor();await page.locator('#qr-search').press('ArrowDown');await page.locator('#qr-search').press('Enter');
-  await page.locator('#qr-explore .qr-table').waitFor();assert.equal(await page.locator('#qr-explore select').inputValue(),'millions');
+  await page.locator('#qr-explore .qr-table').waitFor();assert.equal(await page.locator('#qr-explore select[aria-label="Display units"]').inputValue(),'millions');
   await page.locator('#qr-search').fill('FAIL');await page.getByRole('button',{name:'View results'}).click();await page.getByText('No quarterly income statements are available for this ticker.',{exact:true}).waitFor();
   await page.locator('#qr-refresh').click();await page.getByText(/2 stocks checked/).waitFor();
   await page.locator('#qr-source').selectOption('1');await page.getByText(/1 stocks checked/).waitFor();

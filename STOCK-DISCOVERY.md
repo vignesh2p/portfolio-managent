@@ -2,7 +2,7 @@
 
 Authenticated GET /api/stocks/search?q=... uses yahoo-finance2 search (Yahoo /v1/finance/search), region IN, and filters .NS/.BO equity results. Queries include exchange hints; exact symbols also use quote lookup. Yahoo ranked search is not an exhaustive exchange master list, and classification/coverage depend on Yahoo. Search results are cached for 30 minutes in a bounded process cache.
 
-Custom watchlist POST/PUT accepts discovered: ["RELIANCE.NS"], up to 30 new selections per save, alongside existing tickers. Quotes validate equities server-side; new universe rows and membership commit atomically. Repeated listings reuse existing mappings. Ownership, default protection and three-list limit remain enforced. Saved prices use the existing shared 5-minute Yahoo cache and refresh flow.
+Custom watchlist POST/PUT accepts discovered: ["RELIANCE.NS"], up to 30 new selections per save, alongside existing tickers. Quotes validate equities server-side; new universe rows and membership commit atomically. Repeated listings reuse existing mappings. Ownership, default protection and three-list limit remain enforced. Saved prices use the existing shared 30-minute Yahoo cache and refresh flow.
 
 Discovered listings have generated exchange-qualified Stock Code and Yahoo Finance Code, blank admin CODE, and in_default_watchlist=0. Personal additions never overwrite admin mappings. Discovered stocks can appear in Opportunities with a blank admin CODE. Held stocks appear only in portfolio opportunities.
 

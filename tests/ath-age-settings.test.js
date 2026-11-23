@@ -26,17 +26,14 @@ test('custom ATH cutoff is strict and preserves XIRR exclusion and ordering',()=
  assert.deepEqual(r.sourceRows(holdings,stocks,match,now,30,178).map(s=>s.ticker),['RECENT','BOUNDARY','OLDER']);
 });
 const fs=require('node:fs'),vm=require('node:vm');
-test('settings load and save ATH age and rebalance displays the configured cutoff',async()=>{
+test('rebalance displays the configured ATH cutoff',async()=>{
  const html=fs.readFileSync(require.resolve('../onepiece.html'),'utf8');
  for(const script of html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g))new vm.Script(script[1]);
  const elements={};
  const document={getElementById:id=>elements[id]??=( {value:'',textContent:'',innerHTML:'',disabled:false,reportValidity:()=>true,addEventListener:()=>{}})};
- let saved=180;
+ let saved=730;
  const ctx={document,api:async(url,options)=>{if(url==='/api/rebalancing')return {success:true,data:{ath_age_days:saved,target_growth_pct:30,sources:[]}};if(options)saved=JSON.parse(options.body).ath_age_days;return {success:true,data:{ath_age_days:saved}};}};
  vm.createContext(ctx);
- vm.runInContext(html.slice(html.indexOf('async function loadAthAge(){'),html.indexOf('async function loadSettings(){')),ctx);
- await ctx.loadAthAge();assert.equal(elements['set-ath-age'].value,180);
- elements['set-ath-age'].value='730';await ctx.saveAthAge();assert.equal(saved,730);assert.match(elements['ath-age-message'].textContent,/730 days/);
  vm.runInContext(fs.readFileSync(require.resolve('../rebalancing-ui.js'),'utf8'),ctx);
  await ctx.loadRebalancing();assert.match(elements['rebalance-description'].textContent,/more than 730 days/);assert.match(elements['rebalance-table'].innerHTML,/more than 730 days/);
 });

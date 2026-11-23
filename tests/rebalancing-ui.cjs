@@ -20,6 +20,7 @@ buys.forEach(b=>{b.suggested_investment=200;b.suggested_quantity=Math.floor(200/
      else json={success:true,data:{target_growth_pct:targetGrowth,sources:source.xirr_pct<targetGrowth?[source]:[],source,candidates:buys,opportunities:opportunityGroups(buys,source.market_value),combinations:[{buys,total:1000,remaining:0}],date:'2026-10-25'}};
     }
     if(u.pathname==='/api/growth-target'){if(route.request().method()==='PUT')targetGrowth=route.request().postDataJSON().target_growth_pct;json={success:true,data:{target_growth_pct:targetGrowth}};}
+    if(u.pathname==='/api/user-settings'){if(route.request().method()==='PUT')targetGrowth=route.request().postDataJSON().target_growth_pct;json={success:true,data:{target_growth_pct:targetGrowth,ath_age_days:365,replacement_ath_age_days:100,max_budget:50000,levels:[{fall:-10,allocation:50},{fall:-30,allocation:50}]}};}
     if(u.pathname==='/api/sip-config')json={success:true,data:{max_budget:50000,levels:[{fall:-10,allocation:50},{fall:-30,allocation:50}]}};
     if(u.pathname==='/api/portfolio')json={success:true,data:{holdings:[],xirr_eligible:false}};
     return route.fulfill({json});
@@ -33,7 +34,7 @@ buys.forEach(b=>{b.suggested_investment=200;b.suggested_quantity=Math.floor(200/
   await page.getByRole('button',{name:'Rebalance',exact:true}).click();
   await page.waitForSelector('#rebalance-body table');
   assert.equal(await page.locator('#portfolio-tab-rebalancing').innerText(),'Rebalance Losers');
-  assert.equal(await page.locator('#rebalance-body input, #rebalance-body form').count(),0);
+  assert.equal(await page.locator('#rebalance-body input:not(.app-grid-search), #rebalance-body form').count(),0);
   const inside=page.getByRole('tab',{name:'Rebalance Inside portfolio',exact:true});
   const fresh=page.getByRole('tab',{name:'Rebalance with new opportunities',exact:true});
   const panel=()=>page.locator('#rebalance-dialog').getByRole('tabpanel');
@@ -58,14 +59,14 @@ buys.forEach(b=>{b.suggested_investment=200;b.suggested_quantity=Math.floor(200/
   await page.keyboard.press('Escape');assert.equal(await page.locator('#rebalance-dialog').evaluate(el=>el.open),false);
   assert.equal(await page.locator('#rebalance-table th').filter({hasText:'XIRR %'}).count(),1);
   assert.match(await page.locator('#rebalance-description').innerText(),/30%/);
-  await page.evaluate(()=>switchTab('settings'));await page.waitForFunction(()=>document.getElementById('growth-target-message').textContent==='');
+  await page.evaluate(()=>switchTab('settings'));await page.waitForFunction(()=>!document.getElementById('user-settings-fields').disabled);
   assert.equal(await page.locator('#set-target-growth').inputValue(),'30');
   const strategy=page.getByRole('tab',{name:'Portfolio Allocation Strategy',exact:true}),override=page.getByRole('tab',{name:'Stock Allocation Override',exact:true});
   assert.equal(await strategy.getAttribute('aria-selected'),'true');assert.equal(await strategy.evaluate(el=>el.getBoundingClientRect().left>=0&&el.getBoundingClientRect().right<=innerWidth),true);assert.equal(await page.locator('#stock-budget-form').isVisible(),false);
   await override.click();assert.equal(await page.locator('#stock-budget-form').isVisible(),true);assert.equal(await page.locator('#sip-config-form').isVisible(),false);
   await page.keyboard.press('ArrowLeft');assert.equal(await strategy.getAttribute('aria-selected'),'true');
-  await page.locator('#set-target-growth').fill('10');await page.getByRole('button',{name:'Save Target Growth',exact:true}).click();await page.getByText('Target growth saved. Rebalance Losers will use 10%.',{exact:true}).waitFor();
-  await page.evaluate(()=>loadSettings());await page.waitForFunction(()=>document.getElementById('growth-target-message').textContent==='');assert.equal(await page.locator('#set-target-growth').inputValue(),'10');
+  await page.locator('#set-target-growth').fill('10');await page.getByRole('button',{name:'Save settings',exact:true}).click();await page.getByText('Settings saved. Rebalancing and both Opportunities tabs will use these values.',{exact:true}).waitFor();
+  await page.evaluate(()=>loadSettings());await page.waitForFunction(()=>!document.getElementById('user-settings-fields').disabled);assert.equal(await page.locator('#set-target-growth').inputValue(),'10');
   await page.evaluate(()=>{document.activeElement?.blur();window.scrollTo(0,0);});
   await page.screenshot({path:path.join(root,'test-artifacts','settings-growth-'+width+'.png'),fullPage:true});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);

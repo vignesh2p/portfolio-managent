@@ -20,8 +20,9 @@ function api(url){
   if(p.includes('/admin/debug'))return {success:true,database:{host:'test.example',database:'test'},counts:{users:1}};
   if(p.includes('/admin/table/'))return {success:true,columns:[{name:'id'},{name:'name'}],rows:[{id:1,name:stock.name}]};
   if(p==='/api/sip-stock-budgets')return {success:true,data:[{ticker:stock.ticker,name:stock.name,max_budget:25000}]};
+  if(p==='/api/user-settings')return {success:true,data:{target_growth_pct:30,ath_age_days:365,replacement_ath_age_days:100,max_budget:50000,levels}};
   if(p.includes('/sip-config'))return {success:true,data:{max_budget:50000,levels}};
-  if(p==='/api/portfolio')return {success:true,data:{holdings:[{ticker:stock.ticker,shares:10,avg_price:850}],xirr:10}};
+  if(p==='/api/portfolio')return {success:true,data:{holdings:[{ticker:stock.ticker,shares:10,avg_price:850}],prices:{[stock.ticker]:stock},xirr:10}};
   if(p.includes('/price/'))return {success:true,data:stock};
   if(p.includes('/xirr'))return {success:true,livePrice:850,ath:1000,xirrPct:10,cashflows:trades.map(t=>({...t,date:t.traded_at,cashflow:-8500,runningShares:10}))};
   if(p.includes('portfolio-opportunities'))return {success:true,data:{levels,rows:[{...stock,ok_code:'OK123',levels:levels.map(l=>({...l,trigger_price:1000*(1+l.fall/100),allocated_amount:5000,shares_to_buy:5,invested_amount:l.fall===-15?8500:0,bought_quantity:l.fall===-15?10:0,selected:l.fall===-15,active:l.fall===-15}))}]}};
@@ -71,47 +72,37 @@ function api(url){
           await fits(`SIP data ${width}`);
         }
         if(tab==='portfolio'){
-          await page.waitForSelector('.port-row');
-          assert.ok(await page.locator('.port-row>div:nth-child(2)').isVisible());
-          assert.ok(await page.locator('.port-row>div:nth-child(5)').isVisible());
+          await page.waitForSelector('#port-rows tr');
+          assert.ok(await page.locator('#port-rows tr>td:nth-child(2)').isVisible());
+          assert.ok(await page.locator('#port-rows tr>td:nth-child(5)').isVisible());
           await page.evaluate(()=>switchPortfolioView('allocation'));
           await fits(`allocation ${width}`);
           await page.evaluate(()=>switchPortfolioView('holdings'));
-          await page.locator('.port-row').click();
+          await page.locator('#port-rows [data-stock]').click();
           await fits(`XIRR ${width}`);
           await page.evaluate(()=>closeModal());
         }
         if(tab==='trades'){
-          await page.waitForFunction(()=>document.getElementById('t-stock-options').options.length>0);
-          await page.locator('#t-stock-name').fill('Example');
-          await page.locator('#t-stock-name-panel [role=option]').first().click();
-          assert.ok((await page.locator('#t-stock-name').inputValue()).includes('Example'));
-          await page.locator('#t-stock-name').fill('unknown company');
-          assert.equal(await page.locator('#t-stock-name-panel .autocomplete-empty').textContent(),'No matching options');
-          await page.locator('#t-stock-name').press('Escape');
-          assert.ok((await page.locator('#t-stock-name').inputValue()).includes('Example'));
+          await page.waitForSelector('#trades-table .app-grid-table');
+          assert.equal(await page.locator('#trades-table .app-grid-search').count(),1);
+          await page.locator('#trades-table .app-grid-search').fill('Example');
+          await page.locator('#trades-table .app-grid-clear').click();
 
           await page.locator('#export-trades-btn').click();
           await fits(`export ${width}`);
           await page.keyboard.press('Escape');
         }
         if(tab==='portfolio'){
-          await page.locator('#portfolio-sort-field-search').fill('Stock');
-          assert.equal(await page.locator('#portfolio-sort-field-search').getAttribute('aria-expanded'),'true');
-          await page.locator('#portfolio-sort-field-search').press('Enter');
-          assert.equal(await page.locator('#portfolio-sort-field').inputValue(),'name');
-          await page.locator('#portfolio-sort-order-search').fill('Desc');
-          await page.locator('#portfolio-sort-order-search-panel [role=option]').click();
-          assert.equal(await page.locator('#portfolio-sort-order').inputValue(),'desc');
-          await page.locator('#portfolio-sort-order-search').fill('invalid');
-          assert.equal(await page.locator('#portfolio-sort-order-search').evaluate(el=>el.checkValidity()),false);
-          await page.locator('#portfolio-sort-order-search').press('Escape');
-          assert.equal(await page.locator('#portfolio-sort-order-search').inputValue(),'Descending');
+          await page.locator('[data-sort="symbol"]').click();
+          assert.equal(await page.locator('th[data-column="symbol"]').getAttribute('aria-sort'),'descending');
+          await page.locator('#grid-search').fill('Example');
+          assert.equal(await page.locator('#port-rows tr:not([hidden])').count(),1);
+          await page.locator('#grid-clear').click();
         }
         if(tab==='watchlist'){
           assert.equal(await page.getByRole('button',{name:'Edit watchlist',exact:true}).isDisabled(),true);
           assert.equal(await page.getByRole('button',{name:'Delete watchlist',exact:true}).isDisabled(),true);
-          const watchScroll=page.locator('#watchlist-table .sheet-table-wrap');
+          const watchScroll=page.locator('#watchlist-table .app-grid-scroll');
           await watchScroll.evaluate(el=>el.scrollLeft=el.scrollWidth);
           const geometry=await page.locator('#watchlist-table .sheet-table').evaluate(table=>{
             const a=table.querySelector('tbody td').getBoundingClientRect(),b=table.querySelector('tbody td:nth-child(2)').getBoundingClientRect(),h=table.querySelector('th:nth-child(2)').getBoundingClientRect();
@@ -128,7 +119,7 @@ function api(url){
           await page.locator('#watchlist-editor').getByRole('button',{name:'Cancel'}).click();
         }
         if(tab==='opportunities'){
-          const scroller=page.locator('#opportunity-table .sheet-table-wrap');
+          const scroller=page.locator('#opportunity-table .app-grid-scroll');
           await page.locator('#opportunity-table tbody').evaluate(body=>body.append(body.firstElementChild.cloneNode(true)));
           await scroller.evaluate(el=>{el.scrollLeft=el.scrollWidth;el.scrollTop=20;});
           const frozen=await page.locator('#opportunity-table tbody tr:nth-child(2) td:first-child').evaluate(cell=>({background:getComputedStyle(cell).backgroundColor,left:cell.getBoundingClientRect().left,head:cell.closest('table').querySelector('th').getBoundingClientRect().left}));
@@ -141,6 +132,7 @@ function api(url){
           await fits(`watchlist opportunities ${width}`);
         }
         if(tab==='settings'){
+          await page.locator('#settings-tab-override').click();
           await page.waitForSelector('#stock-budget-select-search');
           await page.locator('#stock-budget-select-search').fill('Example');
           await page.waitForSelector('#stock-budget-select-search-panel [role=option]');
@@ -152,12 +144,14 @@ function api(url){
           assert.equal(await page.locator('#stock-budget-amount').inputValue(),'25000');
           assert.equal(await page.evaluate(()=>Boolean(document.getElementById('settings-strategy').compareDocumentPosition(document.getElementById('stock-budget-form'))&Node.DOCUMENT_POSITION_FOLLOWING)),true);
         
+          await page.locator('#settings-tab-strategy').click();
           await page.locator('#add-sip-level').click();
           assert.equal(await page.locator('#settings-breakdown tbody tr').count(),8);
           await page.getByRole('button',{name:'Remove level 8',exact:true}).click();
           assert.equal(await page.locator('#settings-breakdown tbody tr').count(),7);
           await page.getByRole('button',{name:'Remove level 7',exact:true}).click();
           assert.equal(await page.locator('#settings-breakdown tbody tr').count(),6);
+          await page.locator('#settings-tab-strategy').click();
           await page.locator('#add-sip-level').click();
           await page.locator('[name="allocation_6"]').fill('10');
           await page.locator('[name="allocation_0"]').fill('11');
@@ -166,7 +160,7 @@ function api(url){
           await page.locator('[name="allocation_0"]').fill('10');
           await page.locator('[name="fall_0"]').fill('-12');
           await page.locator('#save-sip-config').click();
-          await page.waitForFunction(()=>document.getElementById('settings-msg').textContent.includes('Configuration saved'));
+          await page.waitForFunction(()=>document.getElementById('settings-msg').textContent.includes('Settings saved'));
           await fits(`SIP config ${width}`);
           assert.equal(await page.locator('#settings-stocks-tab').count(),0);
         }

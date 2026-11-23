@@ -42,7 +42,7 @@ function createService({db,transaction,yf,universe,matchStock,rebuild,now=today}
   // Keep unresolved notifications visible after a user sells the holding.
   const tracked=await database.prepare('SELECT DISTINCT n.holding_ticker,a.ticker AS code FROM corporate_action_notifications n JOIN corporate_actions a ON a.id=n.action_id WHERE n.user_id=? AND NOT EXISTS(SELECT 1 FROM corporate_action_decisions d WHERE d.user_id=n.user_id AND d.action_id=n.action_id AND d.holding_ticker=n.holding_ticker)').all(uid);
   for(const item of tracked){if(!holdings.some(h=>h.ticker===item.holding_ticker)){const trade=trades.find(t=>t.ticker===item.holding_ticker);if(trade)holdings.push({ticker:item.holding_ticker,shares:0,avg_price:0,yahoo_finance_code:item.code,stock_name:trade.stock_name||'',ok_code:trade.ok_code||''});}}
-  return holdings.map(h=>{const ts=trades.filter(t=>t.ticker===h.ticker),first=ts.filter(t=>t.type==='BUY').map(t=>day(t.traded_at)).sort()[0];return {holding:h,trades:ts,first,code:String(h.yahoo_finance_code||matchStock(h,stocks)?.yahoo_finance_code||h.ticker).toUpperCase()};}).filter(p=>p.first);
+  return holdings.map(h=>{const ts=trades.filter(t=>t.ticker===h.ticker),first=ts.filter(t=>t.type==='BUY').map(t=>day(t.traded_at)).sort()[0];const stock=matchStock(h,stocks);return {holding:h,trades:ts,first,stock_name:stock?.name||h.stock_name||ts.find(t=>t.stock_name)?.stock_name||h.ticker,code:String(h.yahoo_finance_code||stock?.yahoo_finance_code||h.ticker).toUpperCase()};}).filter(p=>p.first);
  }
  async function sync(uid){
   const warnings=[];
@@ -78,7 +78,7 @@ function createService({db,transaction,yf,universe,matchStock,rebuild,now=today}
     const tracked=notifications.some(n=>Number(n.action_id)===Number(action.id)&&n.holding_ticker===p.holding.ticker);
     const status=decision?.status||(action.ex_date<=baseline?'read':plan.eligible_shares>0||tracked?'pending':'ineligible');
     if(status==='pending'&&!tracked)await database.prepare('INSERT OR IGNORE INTO corporate_action_notifications(user_id,action_id,holding_ticker) VALUES(?,?,?)').run(uid,action.id,p.holding.ticker);
-    output.push({...action,holding_ticker:p.holding.ticker,from_date:p.first,status,plan,decided_at:decision?.decided_at||null});
+    output.push({...action,holding_ticker:p.holding.ticker,stock_name:p.stock_name,from_date:p.first,status,plan,decided_at:decision?.decided_at||null});
    }
   }
   return {baseline,actions:output,pending:output.filter(a=>a.status==='pending').length};
@@ -141,7 +141,10 @@ function register(app,options){
  app.get('/api/corporate-actions',auth,wrap(async req=>({data:await service.list(req.user.id)})));
  app.post('/api/corporate-actions/sync',auth,wrap(async req=>({warnings:await service.sync(req.user.id),data:await service.list(req.user.id)})));
  app.post('/api/corporate-actions/:id/decision',auth,wrap(async req=>({data:await service.decide(req.user.id,req.params.id,req.body)})));
- app.get('/api/admin/corporate-actions',adminAuth,wrap(async()=>({data:await db.prepare('SELECT * FROM corporate_actions ORDER BY ex_date DESC,id DESC').all()})));
+ app.get('/api/admin/corporate-actions',adminAuth,wrap(async()=>{
+  const [actions,stocks]=await Promise.all([db.prepare('SELECT * FROM corporate_actions ORDER BY ex_date DESC,id DESC').all(),options.universe()]);
+  return {data:actions.map(a=>({...a,stock_name:options.matchStock({ticker:a.ticker,yahoo_finance_code:a.ticker},stocks)?.name||a.ticker}))};
+ }));
  app.post('/api/admin/corporate-actions',adminAuth,wrap(async req=>({data:await service.add(req.body,req.user.email)})));
  return service;
 }

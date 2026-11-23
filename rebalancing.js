@@ -12,22 +12,22 @@ function daysSince(date,now=new Date()){
 function sourceRows(holdings,stocks,match,now,targetGrowth=30,athAgeDays=365){
  return holdings.filter(h=>Number(h.shares)>0).map(h=>{const s=match(h,stocks);return {...h,name:s?.name||h.stock_name||h.ticker,code:s?.code||h.ok_code||'',stock_code:s?.stock_code||h.ticker,price:s?.price??null,ath_drop_pct:Number.isFinite(s?.price)&&s.price>0&&Number.isFinite(s?.ath)&&s.ath>0?(s.price/s.ath-1)*100:null,ath_date:s?.ath_date||null,days_since:daysSince(s?.ath_date,now),invested_amount:Number(h.shares)*Number(h.avg_price),market_value:Number.isFinite(s?.price)&&s.price>0?Number(h.shares)*s.price:null,quote_error:s?.quote_error||null};}).filter(h=>h.days_since>athAgeDays&&Number.isFinite(h.xirr_pct)&&h.xirr_pct<targetGrowth).sort((a,b)=>a.days_since-b.days_since);
 }
-function candidates(stocks,holdings,levels,allowed,source,match,now){
+function candidates(stocks,holdings,levels,allowed,source,match,now,replacementAthAgeDays=100){
  const master=match(source,stocks);
  return stocks.filter(s=>s.ticker!==master?.ticker&&s.ticker!==source.ticker&&allowed.has(s.ticker)&&String(s.stock_code||'').trim()&&Number.isFinite(s.price)&&s.price>0&&s.ath>0).map(s=>{
   const zone=levels.find((l,i)=>s.price<=s.ath*(1+Number(l.fall)/100)&&s.price>(levels[i+1]?s.ath*(1+Number(levels[i+1].fall)/100):0));
   if(!zone||!(Number(zone.allocation)>0))return null;
   const owned=holdings.find(h=>Number(h.shares)>0&&match(h,stocks)?.ticker===s.ticker);
   return {ticker:owned?.ticker||s.ticker,in_portfolio:!!owned,name:s.name,code:s.code,stock_code:s.stock_code,price:s.price,fall:Number(zone.fall),allocation:Number(zone.allocation),drop_pct:(s.price/s.ath-1)*100,days_since:daysSince(s.ath_date,now),quote_error:s.quote_error||null};
- }).filter(row=>row&&row.days_since!==null&&row.days_since<100).sort((a,b)=>b.fall-a.fall||(a.days_since??Infinity)-(b.days_since??Infinity)||a.ticker.localeCompare(b.ticker));
+ }).filter(row=>row&&row.days_since!==null&&row.days_since<replacementAthAgeDays).sort((a,b)=>b.fall-a.fall||(a.days_since??Infinity)-(b.days_since??Infinity)||a.ticker.localeCompare(b.ticker));
 }
-function betaCandidates(rows,stocks,holdings,source,match,now){
+function betaCandidates(rows,stocks,holdings,source,match,now,replacementAthAgeDays=100){
  const sourceIdentity=match(source,stocks)?.ticker||source.ticker;
  return rows.flatMap(row=>{
   const stock=match(row,stocks),identity=stock?.ticker||row.ticker;
   const level=row.levels.find(level=>level.active);
   const age=daysSince(row.ath_date,now);
-  if(identity===sourceIdentity||!level||level.investment_error||!(level.suggested_quantity>0)||!(level.suggested_investment>0)||!(row.price>0)||age===null||age>=100)return [];
+  if(identity===sourceIdentity||!level||level.investment_error||!(level.suggested_quantity>0)||!(level.suggested_investment>0)||!(row.price>0)||age===null||age>=replacementAthAgeDays)return [];
   const owned=holdings.find(h=>Number(h.shares)>0&&(match(h,stocks)?.ticker||h.ticker)===identity);
   return [{ticker:owned?.ticker||row.ticker,in_portfolio:!!owned,name:row.name,code:row.ok_code,stock_code:stock?.stock_code,
    price:row.price,fall:level.fall,allocation:level.allocation,drop_pct:row.fall_pct,days_since:age,quote_error:row.quote_error,

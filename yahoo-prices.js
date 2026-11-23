@@ -1,6 +1,6 @@
 // Adapted from onepiece-yfinance's quote + monthly/daily history lookup.
 const schema='CREATE TABLE IF NOT EXISTS yahoo_quote_cache (stock_code TEXT PRIMARY KEY,data_json TEXT NOT NULL,fetched_at INTEGER NOT NULL)';
-const TTL=5*60*1000;
+const TTL=30*60*1000;
 const ATH_TTL=24*60*60*1000;
 const sharedSchema=[
  'CREATE TABLE IF NOT EXISTS yahoo_shared_quotes (yahoo_symbol TEXT PRIMARY KEY,data_json TEXT NOT NULL,fetched_at INTEGER NOT NULL)',
@@ -87,7 +87,7 @@ function createYahooPrices({db,yf,now=Date.now}){
    const cached=await db.prepare('SELECT data_json,fetched_at FROM yahoo_shared_quotes WHERE yahoo_symbol=?').get(symbol);
    if(!cached)throw new Error('Price is not cached yet. The shared universe refresh will load it.');
    const data=JSON.parse(cached.data_json),stale=now()-Number(cached.fetched_at)>=TTL;
-   return {...data,pe:Number.isFinite(data.pe)?data.pe:null,ticker:stock.ticker,name:stock.name||data.name,stale,cache_expires_at:new Date(Number(cached.fetched_at)+TTL).toISOString(),quote_error:stale?'Cached Yahoo price is at least 5 minutes old; refresh pending.':data.quote_error};
+   return {...data,pe:Number.isFinite(data.pe)?data.pe:null,ticker:stock.ticker,name:stock.name||data.name,stale,cache_expires_at:new Date(Number(cached.fetched_at)+TTL).toISOString(),quote_error:stale?'Cached Yahoo price is older than 30 minutes; refresh pending.':data.quote_error};
  }
  async function readStocks(stocks){
    const [quotes,aliases]=await Promise.all([
@@ -102,7 +102,7 @@ function createYahooPrices({db,yf,now=Date.now}){
        const cached=bySymbol.get(byCode.get(code)||yahooSymbol(code));
        if(!cached)throw new Error('Price is not cached yet. The shared universe refresh will load it.');
        const data=JSON.parse(cached.data_json),stale=now()-Number(cached.fetched_at)>=TTL;
-       return {...stock,...data,pe:Number.isFinite(data.pe)?data.pe:null,ticker:stock.ticker,name:stock.name||data.name,cmp:data.price,stale,cache_expires_at:new Date(Number(cached.fetched_at)+TTL).toISOString(),quote_error:stale?'Cached Yahoo price is at least 5 minutes old; refresh pending.':data.quote_error};
+       return {...stock,...data,pe:Number.isFinite(data.pe)?data.pe:null,ticker:stock.ticker,name:stock.name||data.name,cmp:data.price,stale,cache_expires_at:new Date(Number(cached.fetched_at)+TTL).toISOString(),quote_error:stale?'Cached Yahoo price is older than 30 minutes; refresh pending.':data.quote_error};
      }catch(error){return {...stock,price:null,cmp:null,pe:null,change:null,changePct:null,ath:null,ath_date:null,price_as_of:null,quote_fetched_at:null,source:'YAHOO_FINANCE',quote_error:error.message};}
    });
  }
