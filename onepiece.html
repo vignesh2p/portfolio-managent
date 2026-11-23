@@ -543,7 +543,7 @@ input,button,select{font-family:'DM Mono',monospace}
       </div>
       <div id="portfolio-history" role="tabpanel" aria-labelledby="portfolio-tab-history" hidden>
         <h2 class="page-title">Portfolio history</h2>
-        <p class="page-sub">Daily snapshots scheduled around 4:00 pm India time. Values use the latest saved market prices; history starts from the first snapshot.</p>
+        <p class="page-sub">Weekday snapshots are scheduled around 4:00 pm India time after prices refresh. Values use prices refreshed for that snapshot; history starts from the first snapshot.</p>
         <div class="history-toolbar"><label for="portfolio-history-range">Period</label><select id="portfolio-history-range" class="form-input" onchange="renderPortfolioHistory()"><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last year</option><option value="0" selected>All history</option></select><button type="button" class="preview-btn" onclick="loadPortfolioHistory()">Refresh history</button></div>
         <div id="portfolio-history-content"></div>
       </div>
@@ -965,7 +965,7 @@ function showApp(){
   document.getElementById('user-email-display').textContent=USERINFO?.name||USERINFO?.email||'';
   document.getElementById('t-date').value=new Date().toISOString().substring(0,10);
   if(priceCacheTimer)clearInterval(priceCacheTimer);
-  priceCacheTimer=setInterval(()=>{if(TOKEN)warmSessionPrices();},5*60*1000);
+  priceCacheTimer=setInterval(()=>{if(TOKEN)warmSessionPrices();},15*60*1000);
   loadSettings();
   switchTab('portfolio',document.querySelector(".side-tab[onclick*=portfolio]"));
   warmSessionPrices();

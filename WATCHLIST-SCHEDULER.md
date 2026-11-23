@@ -14,7 +14,7 @@ Authorization: Bearer <CRON_SECRET>; never put the secret in a URL.
 
 ## Activate the included GitHub Actions workflow
 
-.github/workflows/refresh-prices.yml calls the endpoint every 30 minutes on
+.github/workflows/refresh-prices.yml calls the endpoint every 15 minutes on
 weekdays, 09:00–15:30 Asia/Kolkata. The schedule runs outside Vercel; no Vercel
 cron configuration or plan upgrade is required.
 
@@ -28,14 +28,14 @@ cron configuration or plan upgrade is required.
 An authenticated ?dry_run=1 request checks authentication and schedule without
 refreshing. Outside the trading window, manual runs skip safely. GitHub schedules
 can be delayed; this is not an exact-time market feed. The handler skips weekends
-and times outside the window, and deduplicates successful half-hour runs.
+and times outside the window, and deduplicates successful 15-minute runs.
 Public repositories may have schedules disabled after 60 days of inactivity;
 see [GitHub schedule documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule).
 Failed runs can retry; abandoned run records become retryable after ten minutes.
 
 Until deployment secrets are configured and the workflow is pushed, no scheduled
 job is active. Signed-in browsers retain a non-blocking refresh fallback on
-opening and every 30 minutes. Login never waits for prices, and dashboard API
+opening and every 15 minutes. Login never waits for prices, and dashboard API
 requests never wait for this fallback. Reopening a tab reads updated saved data.
 The shared refresh coordinator also enforces the same weekday IST window for
 browser requests: outside it, no universe refresh starts and saved prices remain
@@ -43,4 +43,4 @@ available. A refresh already started in the closing minute may finish afterward.
 
 An external scheduler can also call the same authenticated endpoint on the same
 IST schedule. Allow at least 120 seconds and retry server errors. All callers
-share the database-backed refresh lease and 30-minute quote cache.
+share the database-backed refresh lease and 5-minute quote cache.

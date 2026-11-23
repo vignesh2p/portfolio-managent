@@ -25,3 +25,5 @@
 @media(max-width:600px){ .app-grid-table tbody tr>:first-child { max-width:180px; } }
 #watchlist-table .app-grid-table thead th:nth-child(2) { position:sticky; left:var(--frozen-index-width,64px)!important; z-index:3; background:#1b2b37; }
 #watchlist-table .app-grid-table tbody td:nth-child(2) { position:sticky; left:var(--frozen-index-width,64px)!important; z-index:1; background:#101b23; }
+.app-grid-table tbody tr>td.opportunity-active,.app-grid-table tbody tr:hover>td.opportunity-active { background:#3b3020; }
+.app-grid-table tbody tr>td.beta-current,.app-grid-table tbody tr:hover>td.beta-current { background:#122b30; }

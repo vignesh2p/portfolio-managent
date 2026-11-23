@@ -16,7 +16,7 @@ Missing or ambiguous codes remain errors rather than guessed mappings.
 
 Sign-in only authenticates. Portfolio, Watchlist and Opportunities read saved
 quotes immediately. Browser refreshes run independently at low network priority
-on session opening and every 5 minutes; no page API waits for them. Reopening
+on session opening and every 15 minutes; no page API waits for them. Reopening
 a tab reads newly saved prices. Portfolio status shows the oldest fetched time
 and warns about stale or missing prices.
 

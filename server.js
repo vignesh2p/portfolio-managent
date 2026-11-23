@@ -657,9 +657,9 @@ async function universeStock(ticker){
 }
 async function fetchPrice(ticker){return yahooPrices.readStock(await universeStock(ticker));}
 async function fetchPriceFromWatchlistTable(ticker){return fetchPrice(ticker);}
-async function refreshYahooUniverse({force=false,after=''}={}){
+async function refreshYahooUniverse({force=false,after='',all=false}={}){
   const systemId=await getOnepieceSystemUserId();
-  const stocks=force
+  const stocks=force&&!all
     ?await db.prepare('SELECT ticker,stock_code,yahoo_finance_code,code,name FROM watchlist WHERE user_id=? AND ticker>? ORDER BY ticker LIMIT 12').all(systemId,after)
     :await db.prepare('SELECT ticker,stock_code,yahoo_finance_code,code,name FROM watchlist WHERE user_id=?').all(systemId);
   const errors=[];

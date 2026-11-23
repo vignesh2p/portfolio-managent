@@ -21,7 +21,7 @@
   "crons": [
     {
       "path": "/api/cron/portfolio-history",
-      "schedule": "30 10 * * *"
+      "schedule": "30 10 * * 1-5"
     }
   ]
 }

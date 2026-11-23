@@ -1,12 +1,12 @@
 const {createHash,timingSafeEqual}=require('node:crypto');
-const SCHEDULE={timezone:'Asia/Kolkata',weekdays:'Monday–Friday',start:'09:00',end:'15:30',intervalMinutes:30};
-// UTC half-hour slots, converted to IST without depending on the server timezone.
+const SCHEDULE={timezone:'Asia/Kolkata',weekdays:'Monday–Friday',start:'09:00',end:'15:30',intervalMinutes:15};
+// UTC 15-minute slots, converted to IST without depending on the server timezone.
 function watchlistSlot(date){
   const local=new Date(date.getTime()+330*60000);
   const weekday=local.getUTCDay();
   const minutes=local.getUTCHours()*60+local.getUTCMinutes();
   if(weekday===0||weekday===6||minutes<540||minutes>930)return null;
-  return String(Math.floor(date.getTime()/1800000));
+  return String(Math.floor(date.getTime()/900000));
 }
 function createWatchlistCronHandler({db,sync,secret=()=>process.env.CRON_SECRET,now=()=>new Date()}){
   return async(req,res)=>{
@@ -24,7 +24,7 @@ function createWatchlistCronHandler({db,sync,secret=()=>process.env.CRON_SECRET,
     try{
       await db.exec(`CREATE TABLE IF NOT EXISTS watchlist_sync_runs (
         slot TEXT PRIMARY KEY,status TEXT NOT NULL,started_at INTEGER NOT NULL,completed_at TEXT,total INTEGER,error TEXT)`);
-      // One run per half-hour across serverless instances; a failed or expired run can retry.
+      // One run per 15-minute slot across serverless instances; a failed or expired run can retry.
       const result=await db.prepare(`INSERT INTO watchlist_sync_runs(slot,status,started_at) VALUES (?,'running',?)
         ON CONFLICT(slot) DO UPDATE SET status='running',started_at=excluded.started_at,error=NULL
         WHERE watchlist_sync_runs.status='failed' OR (watchlist_sync_runs.status='running' AND watchlist_sync_runs.started_at<?)`)

@@ -5,7 +5,8 @@ function createSharedPriceRefresh({db,transactionRaw,refresh,now=Date.now,wait=m
  let pending;
  async function run(options={}){
   const force=options.force===true;
-  const owner=randomUUID(),deadline=now()+90000;
+  const waitForBusy=options.waitForBusy===true;
+  const owner=randomUUID(),deadline=now()+(options.waitDeadlineMs??90000);
   while(true){
    // Apply the same IST window to browser fallbacks and scheduled callers.
    if(!force&&!watchlistSlot(new Date(now())))return {skipped:true,marketClosed:true,reason:'Outside the weekday trading window',schedule:SCHEDULE};
@@ -17,7 +18,7 @@ function createSharedPriceRefresh({db,transactionRaw,refresh,now=Date.now,wait=m
     return {owned:true};
    });
    if(state.cached)return state;
-   if(state.busy){if(force||now()>=deadline)return {refreshing:true};await wait(1000);continue;}
+   if(state.busy){if(!waitForBusy||now()>=deadline)return {refreshing:true};await wait(1000);continue;}
    try{
     const result=await refresh(options);
     // A manual batch must not mark the entire universe as freshly cached.
@@ -30,10 +31,14 @@ function createSharedPriceRefresh({db,transactionRaw,refresh,now=Date.now,wait=m
    }
   }
  }
- return (options={})=>{
-  if(options.force===true&&pending)return Promise.resolve({refreshing:true});
-  if(!pending)pending=run(options).finally(()=>{pending=null;});
+ function schedule(options){
+  if(pending){
+   if(options.waitForBusy===true)return pending.then(()=>schedule(options));
+   return options.force===true?Promise.resolve({refreshing:true}):pending;
+  }
+  pending=run(options).finally(()=>{pending=null;});
   return pending;
- };
+ }
+ return (options={})=>schedule(options);
 }
 module.exports={createSharedPriceRefresh};
